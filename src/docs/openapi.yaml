@@ -1,0 +1,80 @@
+openapi: 3.1.0
+info:
+  title: Support Chat API
+  version: 0.1.0
+servers:
+  - url: /
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+  /v1/conversations/start:
+    post:
+      summary: Start a conversation
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Conversation started
+  /v1/conversations/{id}/name:
+    patch:
+      summary: Set customer nickname
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+      responses:
+        '200':
+          description: Updated
+  /v1/conversations:
+    get:
+      summary: List conversations (admin)
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /v1/conversations/{id}:
+    get:
+      summary: Conversation detail (admin)
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /v1/moderation/close:
+    post:
+      summary: Close conversation (admin)
+      responses:
+        '200': { description: OK }
+  /v1/moderation/block:
+    post:
+      summary: Block conversation (admin)
+      responses:
+        '200': { description: OK }
+
+

@@ -1,6 +1,6 @@
 # Support Chat with Telegram — Technical Whitepaper
 
-This whitepaper documents the design, security posture, operational model, and roadmap for a standalone, API-only customer support chat service that uses Telegram Topics as the agent console and a lightweight web widget for customers.
+This whitepaper documents the design, security posture, operational model, and roadmap for a standalone, API-only customer support chat service that uses Telegram Topics as the agent console and a lightweight web widget for customers. The first production deployment is for the "autoroad" website.
 
 ## 1. Objectives and Non‑Goals
 
@@ -19,6 +19,7 @@ This whitepaper documents the design, security posture, operational model, and r
 - **Customer Widget (any frontend)**
   - Anonymous chat widget establishes a conversation via REST and upgrades to WS.
   - Optional nickname; messages are plain text.
+  - Embeddable script served at `/widget.js` (deployed at `https://cms.autoroad.lv/widget.js`).
 - **API Service (this repo)**
   - Node.js + TypeScript + Express for REST; ws for WebSocket; Prisma for DB access.
   - Telegram Bot webhook endpoint to bridge between Telegram and web.
@@ -46,12 +47,13 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
 
 - Creation: on first customer message → create Topic, status=open_unclaimed.
 - Reminders if unclaimed:
-  - T+5m: post Unclaimed reminder (with Claim button) in Topic
-  - T+15m: reminder + pin
-  - T+60m: stop reminding
-- Auto‑close:
-  - No agent reply for 24h → auto‑close, inform customer ("Reply here to reopen").
-  - After agent reply: if customer silent 24h → auto‑close; any new message reopens.
+  - T+5m: post Unclaimed reminder (with Claim action) in Topic
+  - T+15m: post reminder and pin the message for visibility
+  - T+60m: stop reminding (configurable; currently using T+5/T+15 in production)
+- Auto‑close (configurable):
+  - Default design: 24h thresholds as below. For the autoroad pilot, a 5‑minute window is used to expedite testing.
+  - No agent reply for N hours → auto‑close, inform customer ("Reply here to reopen").
+  - After agent reply: if customer silent N hours → auto‑close; any new message reopens.
 - Reopen: customer message on closed thread → reopen + edit topic title (latest nickname + codename).
 - States tracked: OPEN_UNCLAIMED, OPEN_ASSIGNED, AWAITING_CUSTOMER, CLOSED, BLOCKED.
 
@@ -98,6 +100,7 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - POST `/v1/moderation/block` — block
 - **Telegram webhook**
   - POST `/v1/telegram/webhook/<secret>` — receives Updates; only handles messages in SUPPORT_GROUP_ID; routes by `message_thread_id`.
+  - Inline buttons in Topics provide Claim/Close actions; `/note` supported for private notes.
 
 OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 
@@ -108,7 +111,7 @@ OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 - Posting: bridge uses `sendMessage(chat_id, text, { message_thread_id })`.
 - Editing title: `editForumTopic` when nickname or badges change.
 - Closing: `closeForumTopic` when conversation closes.
-- Commands/buttons: `/note`, Claim/Close/Rename via inline keyboards + `answerCallbackQuery`.
+- Commands/buttons: `/note`, Claim/Close via inline keyboards + `answerCallbackQuery`. (Rename via API.)
 
 ## 9. Nginx and Systemd Integration (example)
 
@@ -116,10 +119,7 @@ OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
   - `WorkingDirectory=/root/support_telegram`
   - `EnvironmentFile=/etc/autoroad/support-chat.env`
   - `ExecStart=/usr/bin/node -r ts-node/register src/index.ts`
-- Nginx location under existing TLS vhost (example `autoroad.lv`):
-  - `location /support-chat/ { proxy_pass http://127.0.0.1:4010/; ... }`
-  - `location = /support-chat/health { proxy_pass http://127.0.0.1:4010/health; }`
-  - Ensure this location isn’t blocked by IP ACLs if public access is required.
+- Nginx subdomain vhost (`cms.autoroad.lv`) proxies all paths to the service; widget script is served from this domain to simplify CSP and CORS.
 
 ## 10. Environment Variables
 
@@ -129,8 +129,9 @@ DATABASE_URL=postgresql://support_chat:<password>@localhost:5432/support_chat?sc
 SERVICE_TOKEN=<hex>
 BOT_TOKEN=<telegram-bot-token>
 SUPPORT_GROUP_ID=<telegram-supergroup-id>
-PUBLIC_ORIGIN=https://your.domain
+PUBLIC_ORIGIN=https://cms.autoroad.lv
 WEBHOOK_SECRET=<random>
+TELEGRAM_HEADER_SECRET=<optional>
 ```
 
 ## 11. Abuse & Incident Playbook
@@ -143,7 +144,7 @@ WEBHOOK_SECRET=<random>
 ## 12. Observability & Backups
 
 - Logs: pino + journald; tag request ids; redact tokens.
-- Metrics: add /metrics (Prometheus) later; for now, use journal scans.
+- Metrics: `/metrics` endpoint provides basic counters; extend as needed.
 - Backups: rely on host DB backups (e.g., `autoroad-db-backup.timer`). Include support_chat DB in retention policy.
 
 ## 13. Development & Local Run
@@ -167,6 +168,7 @@ WEBHOOK_SECRET=<random>
 - SERVICE_TOKEN for internal endpoints; JWT per conversation for customers.
 - Webhook secret + optional IP allowlist; strict input validation; short TTLs.
 - Minimal PII; optional purge policy for closed conversations (e.g., 90 days).
+ - Minimal PII; optional purge policy for closed conversations (e.g., 90 days) via daily retention job.
 
 ## 16. Integration Checklist
 
@@ -177,8 +179,9 @@ WEBHOOK_SECRET=<random>
   - Start conversation, topic creation, bi‑directional messaging.
   - Nickname rename → Topic title changes.
   - `/note` sets private note; audit entry created.
-  - Reminder and auto‑close comply with timings.
+  - Inline Claim/Close buttons and `/claim` `/close` commands work.
+  - Reminders (T+5/T+15 pin) and auto‑close (configurable; 5m in pilot) work.
   - Rate limits and blocklist work.
 
 ---
-Last updated: 2025-09-18
+Last updated: 2025-09-18 (cms.autoroad.lv pilot live: REST/WS, widget, Telegram bridge with inline controls, reminders, metrics)
