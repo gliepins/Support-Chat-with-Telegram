@@ -1,0 +1,58 @@
+// Prisma schema for multi-DB readiness (start with Postgres)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Conversation {
+  id                String   @id @default(cuid())
+  codename          String
+  customerName      String?
+  aboutNote         String?  @db.Text
+  threadId          Int?     // Telegram message_thread_id
+  status            ConversationStatus @default(OPEN_UNCLAIMED)
+  assignedAgentTgId BigInt?
+  lastCustomerAt    DateTime @default(now())
+  lastAgentAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  messages          Message[]
+  auditLogs         AuditLog[]
+}
+
+enum ConversationStatus {
+  OPEN_UNCLAIMED
+  OPEN_ASSIGNED
+  AWAITING_CUSTOMER
+  CLOSED
+  BLOCKED
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  conversationId String
+  direction      MessageDirection
+  text           String   @db.Text
+  createdAt      DateTime @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  conversationId String
+  actor          String   // telegram:<id> or system
+  action         String
+  meta           Json
+  createdAt      DateTime @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
