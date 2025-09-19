@@ -32,14 +32,6 @@ export async function ensureTopicForConversation(conversationId: string): Promis
   const threadId = resp.result?.message_thread_id as number;
   await prisma.conversation.update({ where: { id: conversationId }, data: { threadId } });
   try { await sendTopicControls(conversationId); } catch {}
-  // Post welcome message if configured
-  try {
-    const s = await prisma.setting.findUnique({ where: { key: 'welcome_message' } });
-    const welcome = s?.value?.trim();
-    if (welcome) {
-      await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: threadId, text: welcome });
-    }
-  } catch {}
   return threadId;
 }
 

@@ -2,6 +2,7 @@ import { MessageDirection, Prisma } from '@prisma/client';
 import { getPrisma } from '../db/client';
 import { generateCodename } from './codename';
 import { ensureTopicForConversation, sendAgentMessage } from './telegramApi';
+import { broadcastToConversation } from '../ws/hub';
 import { getAgentNameByTgId } from './agentService';
 
 export function validateCustomerName(name: string): { ok: true } | { ok: false; reason: string } {
@@ -35,7 +36,19 @@ export async function createConversation(initialName?: string) {
     } as Prisma.ConversationCreateInput,
   });
   // Proactively create the Telegram topic and post welcome (if configured)
-  try { await ensureTopicForConversation(conversation.id); } catch {}
+  try {
+    await ensureTopicForConversation(conversation.id);
+    // Also send welcome to the customer side as first OUTBOUND message
+    try {
+      const sPrisma = (await import('../db/client')).getPrisma();
+      const setting = await sPrisma.setting.findUnique({ where: { key: 'welcome_message' } });
+      const welcome = (setting?.value || '').trim();
+      if (welcome) {
+        const msg = await addMessage(conversation.id, 'OUTBOUND', welcome);
+        try { broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: msg.text, agent: 'Support' }); } catch {}
+      }
+    } catch {}
+  } catch {}
   return conversation;
 }
 
