@@ -3,6 +3,7 @@ import { getPrisma } from '../db/client';
 import { generateCodename } from './codename';
 import { ensureTopicForConversation, sendAgentMessage } from './telegramApi';
 import { broadcastToConversation } from '../ws/hub';
+import { broadcastToConversation } from '../ws/hub';
 import { getAgentNameByTgId } from './agentService';
 
 export function validateCustomerName(name: string): { ok: true } | { ok: false; reason: string } {
@@ -152,6 +153,7 @@ export async function closeConversation(conversationId: string, actor: string) {
   const prisma = getPrisma();
   const conv = await prisma.conversation.update({ where: { id: conversationId }, data: { status: 'CLOSED' } });
   await recordAudit(conversationId, actor, 'close', {});
+  try { broadcastToConversation(conversationId, { type: 'conversation_closed' }); } catch {}
   return conv;
 }
 
