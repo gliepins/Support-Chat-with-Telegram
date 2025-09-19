@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireServiceAuth } from '../middleware/serviceAuth';
 import { blockConversation, closeConversation, getConversationWithMessages, listConversations } from '../services/conversationService';
+import { getPrisma } from '../db/client';
 import { listAgents, upsertAgent, disableAgent } from '../services/agentService';
 import { Parser } from 'json2csv';
 
@@ -64,6 +65,30 @@ router.post('/v1/moderation/block', async (req, res) => {
   if (!id) return res.status(400).json({ error: 'id required' });
   const conv = await blockConversation(id, 'system');
   return res.json(conv);
+});
+
+// Bulk delete conversations (dangerous): by ids array or by filter
+router.post('/v1/admin/conversations/bulk-delete', async (req, res) => {
+  const prisma = getPrisma();
+  const body = (req.body || {}) as { ids?: string[]; status?: string };
+  try {
+    let where: any = {};
+    if (Array.isArray(body.ids) && body.ids.length > 0) {
+      where.id = { in: body.ids };
+    } else if (body.status) {
+      const s = String(body.status).toLowerCase();
+      if (s === 'open') where.status = { in: ['OPEN_UNCLAIMED', 'OPEN_ASSIGNED', 'AWAITING_CUSTOMER'] };
+      else if (s === 'closed') where.status = 'CLOSED';
+      else if (s === 'blocked') where.status = 'BLOCKED';
+      else if (s === 'all') where = {};
+    } else {
+      return res.status(400).json({ error: 'ids or status required' });
+    }
+    const result = await prisma.conversation.deleteMany({ where });
+    return res.json({ deleted: result.count });
+  } catch (e) {
+    return res.status(500).json({ error: 'internal_error' });
+  }
 });
 
 // Agents admin
