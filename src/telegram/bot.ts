@@ -134,13 +134,22 @@ export async function handleTelegramUpdate(update: TgUpdate) {
     const tgId = msg.from?.id as number | undefined;
     await closeConversation(conversation.id, `telegram:${tgId ?? 'unknown'}`);
     try { await closeTopic(conversation.id); } catch {}
-    try { await sendAgentMessage(conversation.id, `Closed by @${msg.from?.username ?? tgId}`); } catch {}
+    try {
+      const prisma = getPrisma();
+      const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
+      const closing = agent?.closingMessage && agent.isActive ? agent.closingMessage : null;
+      await sendAgentMessage(conversation.id, closing || `Closed by @${msg.from?.username ?? tgId}`);
+    } catch {}
     return;
   }
 
   // Prevent sending to customer until conversation is claimed
   if (conversation.status === 'OPEN_UNCLAIMED') {
     try { await sendAgentMessage(conversation.id, 'Please /claim this conversation before replying.'); } catch {}
+    return;
+  }
+  if (conversation.status === 'CLOSED') {
+    try { await sendAgentMessage(conversation.id, 'Conversation is closed. Send /claim to reopen or reply from customer will reopen.'); } catch {}
     return;
   }
   const created = await addMessage(conversation.id, 'OUTBOUND', text);

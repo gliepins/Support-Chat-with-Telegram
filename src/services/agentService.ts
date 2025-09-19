@@ -26,4 +26,9 @@ export async function getAgentNameByTgId(tgId: bigint): Promise<string | null> {
   return a?.isActive ? a.displayName : null;
 }
 
+export async function setAgentClosingMessage(tgId: bigint, message: string) {
+  const prisma = getPrisma();
+  return prisma.agent.update({ where: { tgId }, data: { closingMessage: message } });
+}
+
 

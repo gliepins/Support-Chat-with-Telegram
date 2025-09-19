@@ -29,12 +29,20 @@ button{cursor:pointer}
   <div class="grid">
     <div>
       <div class="card">
-        <div class="flex">
-          <div>
-            <div>Metrics</div>
-            <pre id="metrics" style="white-space:pre-wrap"></pre>
-          </div>
+        <div class="flex" style="justify-content:space-between">
+          <div>Metrics</div>
           <button id="refreshMetrics">Refresh</button>
+        </div>
+        <pre id="metrics" style="white-space:pre-wrap"></pre>
+      </div>
+      <div class="card">
+        <div class="flex" style="justify-content:space-between">
+          <div>Settings</div>
+          <div id="settingsStatus" style="opacity:.8"></div>
+        </div>
+        <div class="flex" style="gap:8px;margin:8px 0">
+          <input id="welcomeMessage" placeholder="Welcome message" size="56">
+          <button id="saveWelcome">Save</button>
         </div>
       </div>
       <div class="card">
@@ -68,6 +76,7 @@ button{cursor:pointer}
         <div class="flex" style="gap:8px;margin:8px 0">
           <input id="agentTgId" placeholder="Telegram user id (numeric)" size="24">
           <input id="agentName" placeholder="Display name" size="24">
+          <input id="agentClosing" placeholder="Closing message (optional)" size="38">
           <button id="agentSave">Save/Update</button>
           <button id="agentsReload">Reload</button>
         </div>

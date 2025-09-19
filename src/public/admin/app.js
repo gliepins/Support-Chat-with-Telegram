@@ -11,6 +11,9 @@
   const saveBtn = document.getElementById('saveToken');
   const saveStatus = document.getElementById('saveStatus');
   const refreshMetricsBtn = document.getElementById('refreshMetrics');
+  const welcomeMessage = document.getElementById('welcomeMessage');
+  const saveWelcome = document.getElementById('saveWelcome');
+  const settingsStatus = document.getElementById('settingsStatus');
   const statusSel = document.getElementById('status');
   const searchInput = document.getElementById('search');
   const autoRefresh = document.getElementById('autoRefresh');
@@ -29,6 +32,12 @@
     try { document.getElementById('metrics').textContent = await fetchText(origin + '/metrics'); }
     catch (e) { document.getElementById('metrics').textContent = 'Error loading metrics'; }
   };
+  // Auto-refresh metrics every 15s
+  setInterval(()=>{ refreshMetricsBtn.onclick(); }, 15000);
+
+  // Settings
+  async function loadSettings(){ try{ const s = await fetchJSON(origin + '/v1/admin/settings'); welcomeMessage.value = s.welcome_message || ''; }catch{} }
+  saveWelcome.onclick = async ()=>{ try{ await postJSON(origin + '/v1/admin/settings', { welcome_message: welcomeMessage.value||'' }); settingsStatus.textContent='Saved'; setTimeout(()=>settingsStatus.textContent='',1200);}catch{ settingsStatus.textContent='Failed'; setTimeout(()=>settingsStatus.textContent='',1200);} };
 
   function bindRowClicks(){
     Array.from(rows.querySelectorAll('tr[data-id]')).forEach((tr) => {
@@ -97,6 +106,7 @@
   const agentsRows = document.getElementById('agentsRows');
   const agentTgId = document.getElementById('agentTgId');
   const agentName = document.getElementById('agentName');
+  const agentClosing = document.getElementById('agentClosing');
   const agentsReload = document.getElementById('agentsReload');
   const agentSave = document.getElementById('agentSave');
   const agentsStatus = document.getElementById('agentsStatus');
@@ -119,8 +129,8 @@
   }
 
   agentSave.onclick = async ()=>{
-    const id = (agentTgId.value||'').trim(); const name = (agentName.value||'').trim(); if(!id||!name){ setAgentsStatus('Fill fields'); return; }
-    try{ await postJSON(origin + '/v1/admin/agents/upsert', { tgId: id, displayName: name }); setAgentsStatus('Saved'); agentName.value=''; loadAgents(); }catch{ setAgentsStatus('Failed'); }
+    const id = (agentTgId.value||'').trim(); const name = (agentName.value||'').trim(); const cm = (agentClosing.value||'').trim(); if(!id||!name){ setAgentsStatus('Fill fields'); return; }
+    try{ await postJSON(origin + '/v1/admin/agents/upsert', { tgId: id, displayName: name }); if(cm){ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: id, message: cm }); } setAgentsStatus('Saved'); agentName.value=''; agentClosing.value=''; loadAgents(); }catch{ setAgentsStatus('Failed'); }
   };
   agentsReload.onclick = loadAgents;
 

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { requireServiceAuth } from '../middleware/serviceAuth';
 import { blockConversation, closeConversation, getConversationWithMessages, listConversations } from '../services/conversationService';
 import { getPrisma } from '../db/client';
-import { listAgents, upsertAgent, disableAgent } from '../services/agentService';
+import { listAgents, upsertAgent, disableAgent, setAgentClosingMessage } from '../services/agentService';
 import { Parser } from 'json2csv';
 
 const router = Router();
@@ -116,6 +116,26 @@ router.post('/v1/admin/agents/enable', async (req, res) => {
   const prisma = (await import('../db/client')).getPrisma();
   const result = await prisma.agent.update({ where: { tgId: BigInt(tgId) }, data: { isActive: true } });
   return res.json({ tgId: result.tgId.toString(), isActive: result.isActive });
+});
+router.post('/v1/admin/agents/closing-message', async (req, res) => {
+  const { tgId, message } = (req.body || {}) as { tgId?: string | number; message?: string };
+  if (!tgId || typeof message !== 'string') return res.status(400).json({ error: 'tgId and message required' });
+  const result = await setAgentClosingMessage(BigInt(tgId), message);
+  return res.json({ tgId: result.tgId.toString(), closingMessage: result.closingMessage || null });
+});
+
+// Global settings: welcome message
+router.get('/v1/admin/settings', async (_req, res) => {
+  const prisma = (await import('../db/client')).getPrisma();
+  const s = await prisma.setting.findUnique({ where: { key: 'welcome_message' } });
+  return res.json({ welcome_message: s?.value || '' });
+});
+router.post('/v1/admin/settings', async (req, res) => {
+  const { welcome_message } = (req.body || {}) as { welcome_message?: string };
+  if (typeof welcome_message !== 'string') return res.status(400).json({ error: 'welcome_message required' });
+  const prisma = (await import('../db/client')).getPrisma();
+  await prisma.setting.upsert({ where: { key: 'welcome_message' }, update: { value: welcome_message }, create: { key: 'welcome_message', value: welcome_message } });
+  return res.json({ ok: true });
 });
 
 export default router;
