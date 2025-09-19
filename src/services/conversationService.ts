@@ -50,7 +50,7 @@ export async function setNickname(conversationId: string, name: string) {
   return conversation;
 }
 
-export async function listConversations(status?: string) {
+export async function listConversations(status?: string, q?: string) {
   const prisma = getPrisma();
   let where: any = {};
   if (status) {
@@ -63,6 +63,13 @@ export async function listConversations(status?: string) {
     } else if (status.toLowerCase() === 'all') {
       where = {};
     }
+  }
+  if (q && q.trim().length > 0) {
+    const term = q.trim();
+    where.AND = (where.AND || []).concat([{ OR: [
+      { codename: { contains: term, mode: 'insensitive' } },
+      { customerName: { contains: term, mode: 'insensitive' } },
+    ] }]);
   }
   const list = await prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' } });
   // Ensure JSON-safe (BigInt -> string)

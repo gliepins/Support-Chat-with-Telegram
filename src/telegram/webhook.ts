@@ -2,6 +2,7 @@ import { Router } from 'express';
 import pino from 'pino';
 import { handleTelegramUpdate } from './bot';
 import { answerCallback, closeTopic, sendAgentMessage, updateTopicTitleFromConversation } from '../services/telegramApi';
+import { broadcastToConversation } from '../ws/hub';
 import { getPrisma } from '../db/client';
 import { closeConversation, recordAudit } from '../services/conversationService';
 
@@ -19,7 +20,7 @@ export function telegramRouter(): Router {
       const provided = req.header('x-telegram-bot-api-secret-token');
       if (provided !== configuredHeaderSecret) {
         logger.warn({ hasHeader: Boolean(provided) }, 'telegram header secret mismatch');
-        // temporarily accept updates to continue integration
+        return res.status(401).json({ ok: false });
       }
     }
     const update = req.body as any;
@@ -41,6 +42,7 @@ export function telegramRouter(): Router {
               await recordAudit(conversationId, `telegram:${tgId}`, 'claim', { via: 'button' });
               try { await updateTopicTitleFromConversation(conversationId); } catch {}
               try { await sendAgentMessage(conversationId, `Claimed by @${cb.from?.username ?? tgId}`); } catch {}
+              try { broadcastToConversation(conversationId, { type: 'agent_joined', agent: cb.from?.username ? '@'+cb.from.username : String(tgId) }); } catch {}
             }
           } else if (action === 'close') {
             const tgId: number | undefined = cb.from?.id;

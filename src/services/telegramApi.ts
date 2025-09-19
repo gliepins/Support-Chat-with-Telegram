@@ -104,4 +104,12 @@ export async function answerCallback(callbackQueryId: string, text?: string): Pr
   await tgFetch('answerCallbackQuery', { callback_query_id: callbackQueryId, text: text ?? '' });
 }
 
+export async function sendGroupMessage(text: string, threadId?: number): Promise<void> {
+  const chatId = process.env.SUPPORT_GROUP_ID;
+  if (!chatId) throw new Error('SUPPORT_GROUP_ID not set');
+  const body: any = { chat_id: chatId, text };
+  if (typeof threadId === 'number') body.message_thread_id = threadId;
+  await tgFetch('sendMessage', body);
+}
+
 

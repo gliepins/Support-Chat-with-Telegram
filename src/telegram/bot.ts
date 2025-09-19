@@ -2,7 +2,8 @@ import pino from 'pino';
 import { getPrisma } from '../db/client';
 import { addMessage, closeConversation, recordAudit } from '../services/conversationService';
 import { getAgentNameByTgId } from '../services/agentService';
-import { closeTopic, updateTopicTitleFromConversation, sendAgentMessage } from '../services/telegramApi';
+import { closeTopic, updateTopicTitleFromConversation, sendAgentMessage, sendGroupMessage } from '../services/telegramApi';
+import { broadcastToConversation } from '../ws/hub';
 import { broadcastToConversation } from '../ws/hub';
 import { Prisma } from '@prisma/client';
 import { setNickname } from '../services/conversationService';
@@ -20,18 +21,39 @@ type TgUpdate = {
 export async function handleTelegramUpdate(update: TgUpdate) {
   const prisma = getPrisma();
   const msg = update.message;
-  if (!msg || !msg.chat || !msg.message_thread_id) {
-    return; // ignore non-topic messages
-  }
+  if (!msg || !msg.chat) { return; }
   if (msg.from?.is_bot) {
     return; // ignore bot's own messages
   }
   const chatId = msg.chat.id as number;
-  const threadId = msg.message_thread_id as number;
+  const threadId = msg.message_thread_id as number | undefined;
 
   const supportGroupIdEnv = process.env.SUPPORT_GROUP_ID;
   if (!supportGroupIdEnv || chatId.toString() !== supportGroupIdEnv) {
     return; // ignore other chats
+  }
+
+  // If in group root (no thread), handle only agent utility commands and exit
+  if (!threadId) {
+    const text: string | undefined = msg.text || msg.caption;
+    if (!text) return;
+    if (typeof text === 'string' && (/^\/myname\b/.test(text) || /^\/whoami\b/.test(text))) {
+      const tgIdNum = msg.from?.id as number | undefined;
+      if (!tgIdNum) return;
+      try {
+        const name = await getAgentNameByTgId(BigInt(tgIdNum));
+        const reply = name ? `Your agent name is: ${name}` : 'No agent name set. Ask an admin to assign one in Admin → Agents.';
+        await sendGroupMessage(reply);
+      } catch {
+        await sendGroupMessage('Could not look up your agent name right now.');
+      }
+    }
+    if (typeof text === 'string' && /^\/myid\b/.test(text)) {
+      const tgIdNum = msg.from?.id as number | undefined;
+      if (!tgIdNum) return;
+      try { await sendGroupMessage(`Your Telegram user id: ${tgIdNum}`); } catch {}
+    }
+    return;
   }
 
   // Find conversation by threadId
@@ -63,6 +85,14 @@ export async function handleTelegramUpdate(update: TgUpdate) {
     return;
   }
 
+  // /myid (reply with numeric Telegram user id)
+  if (typeof text === 'string' && /^\/myid\b/.test(text)) {
+    const tgIdNum = msg.from?.id as number | undefined;
+    if (!tgIdNum) return;
+    try { await sendAgentMessage(conversation.id, `Your Telegram user id: ${tgIdNum}`); } catch {}
+    return;
+  }
+
   // /note command (private note; not sent to customer)
   if (typeof text === 'string' && text.startsWith('/note')) {
     const note = text.replace(/^\/note\s*/, '').trim();
@@ -80,6 +110,7 @@ export async function handleTelegramUpdate(update: TgUpdate) {
     await recordAudit(conversation.id, `telegram:${tgId}`, 'claim', {});
     try { await updateTopicTitleFromConversation(conversation.id); } catch {}
     try { await sendAgentMessage(conversation.id, `Claimed by @${msg.from?.username ?? tgId}`); } catch {}
+    try { broadcastToConversation(conversation.id, { type: 'agent_joined', agent: msg.from?.username ? '@'+msg.from.username : String(tgId) }); } catch {}
     return;
   }
 

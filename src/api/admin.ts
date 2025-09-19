@@ -11,7 +11,8 @@ router.use(requireServiceAuth);
 router.get('/v1/conversations', async (req, res) => {
   try {
     const status = (req.query.status as string | undefined) || 'all';
-    const list = await listConversations(status);
+    const q = (req.query.q as string | undefined) || '';
+    const list = await listConversations(status, q);
     return res.json(list);
   } catch (e: any) {
     return res.status(500).json({ error: 'internal_error' });

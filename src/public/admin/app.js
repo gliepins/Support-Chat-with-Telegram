@@ -13,6 +13,7 @@
   const refreshMetricsBtn = document.getElementById('refreshMetrics');
   const loadBtn = document.getElementById('load');
   const statusSel = document.getElementById('status');
+  const searchInput = document.getElementById('search');
   const autoRefresh = document.getElementById('autoRefresh');
   const rows = document.getElementById('rows');
   const detail = document.getElementById('detail');
@@ -44,8 +45,12 @@
   async function loadConversations() {
     rows.innerHTML = '';
     const status = statusSel.value;
+    const q = (searchInput.value||'').trim();
     try {
-      const list = await fetchJSON(origin + '/v1/conversations' + (status==='all'?'':'?status=' + encodeURIComponent(status)));
+      const url = new URL(origin + '/v1/conversations');
+      if (status !== 'all') url.searchParams.set('status', status);
+      if (q) url.searchParams.set('q', q);
+      const list = await fetchJSON(url.toString());
       if (!Array.isArray(list) || list.length === 0) {
         const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan=5; td.textContent='No conversations'; tr.appendChild(td); rows.appendChild(tr); return;
       }
