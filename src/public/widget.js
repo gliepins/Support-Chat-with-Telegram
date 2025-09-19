@@ -71,11 +71,14 @@
     function ensureConn(){ ensureSession(false).then(function(s){ connectNow(s.token) }) }
     function sendText(text){ if(ws && ws.readyState===1){ try{ ws.send(text); return }catch(_){ } } queue.push(text); ensureConn(); }
 
-    function openPanel(){ panel.style.display='flex'; store.setItem('scw:ts', String(Date.now())); unread=0; showBadge(); ensureSession(false).then(function(s){ loadHistory().then(function(){ connectNow(s.token) }); }); }
-    function closePanel(){ panel.style.display='none'; }
+    function openPanel(){ panel.style.display='flex'; store.setItem('scw:ts', String(Date.now())); store.setItem('scw:open','1'); unread=0; showBadge(); ensureSession(false).then(function(s){ loadHistory().then(function(){ connectNow(s.token) }); }); }
+    function closePanel(){ panel.style.display='none'; try{ store.removeItem('scw:open'); }catch(_){ } }
     btn.onclick=function(){panel.style.display==='flex'?closePanel():openPanel()}; close.onclick=closePanel;
 
     var editing=false; edit.onclick=function(){ if(editing) return; editing=true; ensureSession(false).then(function(s){ var current=store.getItem('scw:name')||''; var wrap=el('div','scw-name-edit'); var inp=el('input'); inp.value=current; inp.placeholder='Your name'; var save=el('button','scw-name-btn','Save'); var cancel=el('button','scw-name-btn scw-name-cancel','Cancel'); wrap.appendChild(inp); wrap.appendChild(save); wrap.appendChild(cancel); head.insertBefore(wrap, actions); function done(){ try{ head.removeChild(wrap); }catch(_){ } editing=false; } cancel.onclick=done; save.onclick=function(){ var name=inp.value.trim(); if(!name){ done(); return; } patchName(origin, store.getItem('scw:id'), (store.getItem('scw:token')||''), name).then(function(){ store.setItem('scw:name',name); updateTitle(); done(); }).catch(function(){ alert('Could not update name right now. Please try later.'); done(); }); }; inp.addEventListener('keydown',function(e){ if(e.key==='Enter') save.onclick(); if(e.key==='Escape') cancel.onclick(); }); setTimeout(function(){ try{ inp.focus(); inp.select(); }catch(_){ } }, 0); }); };
+
+    // Auto-open panel after refresh if it was previously open
+    try { if (store.getItem('scw:open') === '1') { openPanel(); } } catch(_){ }
 
     function autosize(){ input.style.height='auto'; var h=Math.min(140, Math.max(38, input.scrollHeight)); input.style.height=h+'px'; }
     input.addEventListener('input', function(){ store.setItem('scw:draft', input.value||''); autosize(); });
