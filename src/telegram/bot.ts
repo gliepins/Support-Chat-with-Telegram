@@ -122,6 +122,11 @@ export async function handleTelegramUpdate(update: TgUpdate) {
     return;
   }
 
+  // Prevent sending to customer until conversation is claimed
+  if (conversation.status === 'OPEN_UNCLAIMED') {
+    try { await sendAgentMessage(conversation.id, 'Please /claim this conversation before replying.'); } catch {}
+    return;
+  }
   const created = await addMessage(conversation.id, 'OUTBOUND', text);
   let agentName: string | null = null;
   if (msg.from?.id) {
