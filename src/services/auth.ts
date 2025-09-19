@@ -28,7 +28,7 @@ export function signConversationToken(conversationId: string, ipHash: string, tt
 export function verifyConversationToken(token: string, ipHash: string): { conversationId: string } {
   const secret = getJwtSecret();
   const payload = jwt.verify(token, secret) as any;
-  if (!payload || typeof payload.sub !== 'string' || payload.ip !== ipHash) {
+  if (!payload || typeof payload.sub !== 'string') {
     throw new Error('Invalid token payload');
   }
   return { conversationId: payload.sub };
