@@ -45,7 +45,8 @@
   function connect(origin,token,onMsg,onOpen,onClose){var ws=new WebSocket(origin.replace(/^http/,'ws')+'/v1/ws?token='+encodeURIComponent(token));ws.onmessage=function(e){try{var m=JSON.parse(e.data);if(m&&m.type==='agent_joined'){onMsg('SYS', '[agent] joined: '+(m.agent||'Agent'), Date.now());return;} if(m&&typeof m.text==='string'){onMsg(m.direction==='OUTBOUND'?'OUT':'IN',m.text,Date.now(),m.agent)}}catch(_){} };ws.onopen=function(){onOpen&&onOpen()};ws.onclose=function(){onClose&&onClose()};ws.onerror=function(){try{ws.close()}catch(_){}};return ws}
   function patchName(origin,id,token,name){return fetch(origin+'/v1/conversations/'+encodeURIComponent(id)+'/name',{method:'PATCH',headers:{'content-type':'application/json','authorization':'Bearer '+token},body:JSON.stringify({name:name})}).then(function(r){if(!r.ok)throw new Error('rename failed');return r.json()})}
 
-  function init(opts){style();var origin=(opts.origin||'').replace(/\/$/,'');var store=w.localStorage||{getItem:function(){},setItem:function(){}};
+  function detectOrigin(){ try{ var s=document.currentScript && document.currentScript.src; if(!s){ var scripts=document.getElementsByTagName('script'); if(scripts&&scripts.length) s=scripts[scripts.length-1].src; } if(s){ var u=new URL(s); return u.origin; } }catch(_){} return '' }
+  function init(opts){style();var origin=((opts.origin||'')||detectOrigin()).replace(/\/$/,'');var store=w.localStorage||{getItem:function(){},setItem:function(){}};
     var btn=el('div','scw-btn','Chat'); var badge=el('div','scw-badge','0'); btn.style.position='fixed'; btn.style.bottom='16px'; var pos=(opts.position||'right')==='left'?'left':'right'; btn.style[pos]='16px'; btn.style[('right'===pos?'left':'right')]='auto'; btn.appendChild(badge);
 
     var panel=el('div','scw-panel'); panel.style[pos]='16px'; panel.style[('right'===pos?'left':'right')]='auto';
@@ -70,7 +71,7 @@
     function ensureConn(){ ensureSession(false).then(function(s){ connectNow(s.token) }) }
     function sendText(text){ if(ws && ws.readyState===1){ try{ ws.send(text); return }catch(_){ } } queue.push(text); ensureConn(); }
 
-    function openPanel(){ panel.style.display='flex'; store.setItem('scw:ts', String(Date.now())); unread=0; showBadge(); loadHistory().then(ensureConn); }
+    function openPanel(){ panel.style.display='flex'; store.setItem('scw:ts', String(Date.now())); unread=0; showBadge(); ensureSession(false).then(function(s){ loadHistory().then(function(){ connectNow(s.token) }); }); }
     function closePanel(){ panel.style.display='none'; }
     btn.onclick=function(){panel.style.display==='flex'?closePanel():openPanel()}; close.onclick=closePanel;
 
