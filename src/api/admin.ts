@@ -110,6 +110,13 @@ router.post('/v1/admin/agents/disable', async (req, res) => {
   const result = await disableAgent(BigInt(tgId));
   return res.json({ tgId: result.tgId.toString(), isActive: result.isActive });
 });
+router.post('/v1/admin/agents/enable', async (req, res) => {
+  const { tgId } = (req.body || {}) as { tgId?: string | number };
+  if (!tgId) return res.status(400).json({ error: 'tgId required' });
+  const prisma = (await import('../db/client')).getPrisma();
+  const result = await prisma.agent.update({ where: { tgId: BigInt(tgId) }, data: { isActive: true } });
+  return res.json({ tgId: result.tgId.toString(), isActive: result.isActive });
+});
 
 export default router;
 

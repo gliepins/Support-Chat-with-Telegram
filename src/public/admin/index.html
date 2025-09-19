@@ -15,7 +15,7 @@ button{cursor:pointer}
 .badge{padding:2px 6px;border-radius:999px;border:1px solid #3b82f6;color:#93c5fd}
 #saveStatus{font:12px system-ui;color:#93c5fd}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-#detail{white-space:pre-wrap;background:#0b1433;border:1px solid #263057;border-radius:8px;min-height:180px;padding:10px}
+#detail{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;background:#0b1433;border:1px solid #263057;border-radius:8px;min-height:180px;padding:10px}
 </style>
 <header>
   <div>Support Admin</div>
@@ -53,11 +53,10 @@ button{cursor:pointer}
         </div>
         <div class="flex" style="gap:8px;margin:8px 0">
           <button id="deleteSelected" style="background:#dc2626;color:#fff;border:0;padding:6px 10px;border-radius:6px">Delete Selected</button>
-          <button id="deleteByStatus" style="background:#b91c1c;color:#fff;border:0;padding:6px 10px;border-radius:6px">Delete All In Status</button>
           <span id="bulkStatus"></span>
         </div>
         <table class="table">
-          <thead><tr><th><input type="checkbox" id="selectAll"></th><th>Id</th><th>Codename</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th><input type="checkbox" id="selectAll"></th><th>Codename</th><th>Name</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>

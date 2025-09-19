@@ -17,7 +17,6 @@
   const rows = document.getElementById('rows');
   const selectAll = document.getElementById('selectAll');
   const deleteSelected = document.getElementById('deleteSelected');
-  const deleteByStatus = document.getElementById('deleteByStatus');
   const bulkStatus = document.getElementById('bulkStatus');
   const detail = document.getElementById('detail');
   const detailTitle = document.getElementById('detailTitle');
@@ -60,13 +59,14 @@
       for (const c of list) {
         const tr = document.createElement('tr'); tr.setAttribute('data-id', c.id);
         const cb = `<input type=\"checkbox\" class=\"rowSel\" data-id=\"${c.id}\">`;
-        tr.innerHTML = `<td>${cb}</td><td>${c.id}</td><td>${c.codename}</td><td>${c.customerName||''}</td><td><span class=\"badge\">${c.status}</span></td>`;
+        const updated = c.updatedAt ? new Date(c.updatedAt).toLocaleString() : '';
+        tr.innerHTML = `<td>${cb}</td><td>${c.codename}</td><td>${c.customerName||''}</td><td><span class=\"badge\">${c.status}</span></td><td>${updated}</td>`;
         const td = document.createElement('td');
         const btnClose = document.createElement('button'); btnClose.textContent='Close'; btnClose.onclick = async (e)=>{ e.stopPropagation(); try{ await postJSON(origin + '/v1/moderation/close', { id: c.id }); loadConversations(); }catch{ alert('Close failed'); } };
         const btnBlock = document.createElement('button'); btnBlock.textContent='Block'; btnBlock.style.marginLeft='6px'; btnBlock.onclick = async (e)=>{ e.stopPropagation(); try{ await postJSON(origin + '/v1/moderation/block', { id: c.id }); loadConversations(); }catch{ alert('Block failed'); } };
-        const aJson = document.createElement('a'); aJson.textContent='Export JSON'; aJson.href = '#'; aJson.style.marginLeft='6px'; aJson.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); fetch(origin + '/v1/conversations/' + encodeURIComponent(c.id) + '/export.json', { headers: authHeaders() }).then(r=>r.blob()).then(b=>{ const url=URL.createObjectURL(b); const dl=document.createElement('a'); dl.href=url; dl.download='conversation_'+c.id+'.json'; dl.click(); URL.revokeObjectURL(url); }); };
+        // remove Export JSON per request
         const aCsv = document.createElement('a'); aCsv.textContent='Export CSV'; aCsv.href = '#'; aCsv.style.marginLeft='6px'; aCsv.onclick = (e)=>{ e.preventDefault(); e.stopPropagation(); fetch(origin + '/v1/conversations/' + encodeURIComponent(c.id) + '/export.csv', { headers: authHeaders() }).then(r=>r.blob()).then(b=>{ const url=URL.createObjectURL(b); const dl=document.createElement('a'); dl.href=url; dl.download='conversation_'+c.id+'.csv'; dl.click(); URL.revokeObjectURL(url); }); };
-        td.append(btnClose, btnBlock, aJson, aCsv); tr.appendChild(td); rows.appendChild(tr);
+        td.append(btnClose, btnBlock, aCsv); tr.appendChild(td); rows.appendChild(tr);
       }
       bindRowClicks();
     } catch (e) {
@@ -91,17 +91,7 @@
       loadConversations();
     } catch { bulkStatus.textContent = 'Failed'; setTimeout(()=>bulkStatus.textContent='',1200); }
   };
-  deleteByStatus.onclick = async () => {
-    const status = statusSel.value;
-    if (!confirm('Delete ALL conversations in status: '+status+' ?')) return;
-    try {
-      const r = await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ status }) });
-      const json = await r.json().catch(()=>({}));
-      bulkStatus.textContent = 'Deleted ' + (json && typeof json.deleted==='number' ? json.deleted : '');
-      setTimeout(()=>bulkStatus.textContent='',1500);
-      loadConversations();
-    } catch { bulkStatus.textContent = 'Failed'; setTimeout(()=>bulkStatus.textContent='',1200); }
-  };
+  // removed dangerous delete by status
 
   // Agents management
   const agentsRows = document.getElementById('agentsRows');
@@ -121,8 +111,9 @@
         const tr=document.createElement('tr');
         tr.innerHTML = `<td>${a.tgId}</td><td>${a.displayName}</td><td>${a.isActive}</td>`;
         const td=document.createElement('td');
-        const dis=document.createElement('button'); dis.textContent='Disable'; dis.onclick=async()=>{ try{ await postJSON(origin + '/v1/admin/agents/disable', { tgId: a.tgId }); setAgentsStatus('Disabled'); loadAgents(); }catch{ setAgentsStatus('Failed'); } };
-        td.appendChild(dis); tr.appendChild(td); agentsRows.appendChild(tr);
+        const dis=document.createElement('button'); dis.textContent='Disable'; dis.disabled = !a.isActive; dis.onclick=async()=>{ try{ await postJSON(origin + '/v1/admin/agents/disable', { tgId: a.tgId }); setAgentsStatus('Disabled'); loadAgents(); }catch{ setAgentsStatus('Failed'); } };
+        const en=document.createElement('button'); en.textContent='Enable'; en.style.marginLeft='6px'; en.disabled = !!a.isActive; en.onclick=async()=>{ try{ await postJSON(origin + '/v1/admin/agents/enable', { tgId: a.tgId }); setAgentsStatus('Enabled'); loadAgents(); }catch{ setAgentsStatus('Failed'); } };
+        td.appendChild(dis); td.appendChild(en); tr.appendChild(td); agentsRows.appendChild(tr);
       }
     }catch{ const tr=document.createElement('tr'); const td=document.createElement('td'); td.colSpan=4; td.textContent='Failed to load agents'; tr.appendChild(td); agentsRows.appendChild(tr); }
   }
