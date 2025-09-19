@@ -1,6 +1,6 @@
 import pino from 'pino';
 import { getPrisma } from '../db/client';
-import { addMessage, closeConversation, recordAudit } from '../services/conversationService';
+import { addMessage, closeConversation, recordAudit, getAssignedAgentName } from '../services/conversationService';
 import { getAgentNameByTgId } from '../services/agentService';
 import { closeTopic, updateTopicTitleFromConversation, sendAgentMessage, sendGroupMessage } from '../services/telegramApi';
 import { broadcastToConversation } from '../ws/hub';
@@ -129,9 +129,12 @@ export async function handleTelegramUpdate(update: TgUpdate) {
   }
   const created = await addMessage(conversation.id, 'OUTBOUND', text);
   let agentName: string | null = null;
-  if (msg.from?.id) {
-    try { agentName = await getAgentNameByTgId(BigInt(msg.from.id)); } catch {}
-  }
+  try {
+    agentName = await getAssignedAgentName(conversation.id);
+    if (!agentName && msg.from?.id) {
+      agentName = await getAgentNameByTgId(BigInt(msg.from.id));
+    }
+  } catch {}
   broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: created.text, agent: agentName || (msg.from?.username ? '@'+msg.from.username : undefined) });
 }
 

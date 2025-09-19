@@ -2,6 +2,7 @@ import { MessageDirection, Prisma } from '@prisma/client';
 import { getPrisma } from '../db/client';
 import { generateCodename } from './codename';
 import { ensureTopicForConversation, sendAgentMessage } from './telegramApi';
+import { getAgentNameByTgId } from './agentService';
 
 export function validateCustomerName(name: string): { ok: true } | { ok: false; reason: string } {
   const trimmed = name.trim();
@@ -94,6 +95,13 @@ export async function listMessagesForConversation(conversationId: string) {
     orderBy: { createdAt: 'asc' },
     select: { createdAt: true, direction: true, text: true },
   });
+}
+
+export async function getAssignedAgentName(conversationId: string): Promise<string | null> {
+  const prisma = getPrisma();
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!conv || conv.assignedAgentTgId == null) return null;
+  try { return await getAgentNameByTgId(conv.assignedAgentTgId); } catch { return null }
 }
 
 export async function addMessage(conversationId: string, direction: 'INBOUND' | 'OUTBOUND', text: string) {
