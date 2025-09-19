@@ -4,6 +4,7 @@ import { handleTelegramUpdate } from './bot';
 import { answerCallback, closeTopic, sendAgentMessage, updateTopicTitleFromConversation } from '../services/telegramApi';
 import { broadcastToConversation } from '../ws/hub';
 import { getPrisma } from '../db/client';
+import { getAgentNameByTgId } from '../services/agentService';
 import { closeConversation, recordAudit } from '../services/conversationService';
 
 const logger = pino({ transport: { target: 'pino-pretty' } });
@@ -42,7 +43,15 @@ export function telegramRouter(): Router {
               await recordAudit(conversationId, `telegram:${tgId}`, 'claim', { via: 'button' });
               try { await updateTopicTitleFromConversation(conversationId); } catch {}
               try { await sendAgentMessage(conversationId, `Claimed by @${cb.from?.username ?? tgId}`); } catch {}
-              try { broadcastToConversation(conversationId, { type: 'agent_joined' }); } catch {}
+              // Announce agent joining with display name if available
+              try {
+                const tgIdStr = cb.from?.id ? String(cb.from.id) : '';
+                let label = null;
+                if (tgIdStr) {
+                  try { label = await getAgentNameByTgId(BigInt(tgIdStr)); } catch {}
+                }
+                broadcastToConversation(conversationId, { type: 'agent_joined', agent: label || 'Support' });
+              } catch {}
             }
           } else if (action === 'close') {
             const tgId: number | undefined = cb.from?.id;

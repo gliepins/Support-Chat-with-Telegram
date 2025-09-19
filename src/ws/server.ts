@@ -5,7 +5,7 @@ import pino from 'pino';
 import { addMessage } from '../services/conversationService';
 import { addClientToConversation, broadcastToConversation, removeClientFromConversation } from './hub';
 import { hashIp, verifyConversationToken } from '../services/auth';
-import { ensureTopicForConversation, sendAgentMessage } from '../services/telegramApi';
+import { ensureTopicForConversation, sendAgentMessage, sendCustomerMessage } from '../services/telegramApi';
 
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
@@ -68,7 +68,7 @@ export function attachWsServer(httpServer: Server, pathPrefix = '/v1/ws') {
         await addMessage(conversationId, 'INBOUND', text);
         try {
           await ensureTopicForConversation(conversationId);
-          await sendAgentMessage(conversationId, text);
+          await sendCustomerMessage(conversationId, text);
         } catch {}
         // Echo to all clients in this conversation (customer can have multiple tabs)
         broadcastToConversation(conversationId, { direction: 'INBOUND', text });

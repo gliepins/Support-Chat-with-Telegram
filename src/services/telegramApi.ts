@@ -47,6 +47,19 @@ export async function sendAgentMessage(conversationId: string, text: string): Pr
   await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text });
 }
 
+export async function sendCustomerMessage(conversationId: string, text: string): Promise<void> {
+  const prisma = getPrisma();
+  const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!conv || !conv.threadId) {
+    await ensureTopicForConversation(conversationId);
+  }
+  const chatId = process.env.SUPPORT_GROUP_ID;
+  const updated = await prisma.conversation.findUnique({ where: { id: conversationId } });
+  if (!updated?.threadId) throw new Error('thread id missing');
+  const display = updated.customerName && updated.customerName.trim().length > 0 ? updated.customerName.trim() : updated.codename;
+  await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text: `${display}: ${text}` });
+}
+
 export async function updateTopicTitleFromConversation(conversationId: string): Promise<void> {
   const prisma = getPrisma();
   const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
