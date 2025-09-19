@@ -109,7 +109,7 @@ export async function handleTelegramUpdate(update: TgUpdate) {
     await recordAudit(conversation.id, `telegram:${tgId}`, 'claim', {});
     try { await updateTopicTitleFromConversation(conversation.id); } catch {}
     try { await sendAgentMessage(conversation.id, `Claimed by @${msg.from?.username ?? tgId}`); } catch {}
-    try { broadcastToConversation(conversation.id, { type: 'agent_joined', agent: msg.from?.username ? '@'+msg.from.username : String(tgId) }); } catch {}
+    try { broadcastToConversation(conversation.id, { type: 'agent_joined' }); } catch {}
     return;
   }
 

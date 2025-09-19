@@ -42,7 +42,7 @@ export function telegramRouter(): Router {
               await recordAudit(conversationId, `telegram:${tgId}`, 'claim', { via: 'button' });
               try { await updateTopicTitleFromConversation(conversationId); } catch {}
               try { await sendAgentMessage(conversationId, `Claimed by @${cb.from?.username ?? tgId}`); } catch {}
-              try { broadcastToConversation(conversationId, { type: 'agent_joined', agent: cb.from?.username ? '@'+cb.from.username : String(tgId) }); } catch {}
+              try { broadcastToConversation(conversationId, { type: 'agent_joined' }); } catch {}
             }
           } else if (action === 'close') {
             const tgId: number | undefined = cb.from?.id;

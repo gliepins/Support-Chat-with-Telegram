@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { hashIp, signConversationToken } from '../services/auth';
-import { createConversation, setNickname, listMessagesForConversation } from '../services/conversationService';
+import { createConversation, setNickname, listMessagesForConversation, getAssignedAgentName } from '../services/conversationService';
 import { updateTopicTitleFromConversation } from '../services/telegramApi';
 import { requireConversationAuth } from '../middleware/conversationAuth';
 import { ipRateLimit, keyRateLimit } from '../middleware/rateLimit';
@@ -46,7 +46,15 @@ router.get('/v1/conversations/:id/messages', async (req, res) => {
   try {
     const id = req.params.id;
     const msgs = await listMessagesForConversation(id);
-    return res.json(msgs);
+    let agent: string | null = null;
+    try { agent = await getAssignedAgentName(id); } catch {}
+    const enriched = msgs.map((m) => {
+      if (m.direction === 'OUTBOUND') {
+        return { ...m, agent: agent || 'Support' } as any;
+      }
+      return m as any;
+    });
+    return res.json(enriched);
   } catch (e: any) {
     return res.status(400).json({ error: 'bad request' });
   }
