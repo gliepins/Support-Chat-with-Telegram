@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { requireServiceAuth } from '../middleware/serviceAuth';
 import { blockConversation, closeConversation, getConversationWithMessages, listConversations } from '../services/conversationService';
 import { getPrisma } from '../db/client';
-import { listAgents, upsertAgent, disableAgent, setAgentClosingMessage } from '../services/agentService';
+import { listAgents, upsertAgent, disableAgent, setAgentClosingMessage, enableAgent } from '../services/agentService';
 import { Parser } from 'json2csv';
+import { deleteTopicByThreadId } from '../services/telegramApi';
 
 const router = Router();
 
@@ -72,6 +73,9 @@ router.post('/v1/admin/conversations/bulk-delete', async (req, res) => {
   const prisma = getPrisma();
   const body = (req.body || {}) as { ids?: string[]; status?: string };
   try {
+    const toDelete = Array.isArray(body.ids) && body.ids.length > 0
+      ? await prisma.conversation.findMany({ where: { id: { in: body.ids } }, select: { id: true, threadId: true } })
+      : [];
     let where: any = {};
     if (Array.isArray(body.ids) && body.ids.length > 0) {
       where.id = { in: body.ids };
@@ -85,6 +89,12 @@ router.post('/v1/admin/conversations/bulk-delete', async (req, res) => {
       return res.status(400).json({ error: 'ids or status required' });
     }
     const result = await prisma.conversation.deleteMany({ where });
+    // Best-effort delete forum topics for those with known threadId
+    for (const c of toDelete) {
+      if (typeof c.threadId === 'number') {
+        try { await deleteTopicByThreadId(c.threadId); } catch {}
+      }
+    }
     return res.json({ deleted: result.count });
   } catch (e) {
     return res.status(500).json({ error: 'internal_error' });
@@ -113,8 +123,7 @@ router.post('/v1/admin/agents/disable', async (req, res) => {
 router.post('/v1/admin/agents/enable', async (req, res) => {
   const { tgId } = (req.body || {}) as { tgId?: string | number };
   if (!tgId) return res.status(400).json({ error: 'tgId required' });
-  const prisma = (await import('../db/client')).getPrisma();
-  const result = await prisma.agent.update({ where: { tgId: BigInt(tgId) }, data: { isActive: true } });
+  const result = await enableAgent(BigInt(tgId));
   return res.json({ tgId: result.tgId.toString(), isActive: result.isActive });
 });
 router.post('/v1/admin/agents/closing-message', async (req, res) => {
@@ -126,15 +135,15 @@ router.post('/v1/admin/agents/closing-message', async (req, res) => {
 
 // Global settings: welcome message
 router.get('/v1/admin/settings', async (_req, res) => {
-  const prisma = (await import('../db/client')).getPrisma();
-  const s = await prisma.setting.findUnique({ where: { key: 'welcome_message' } });
-  return res.json({ welcome_message: s?.value || '' });
+  const prisma = (await import('../db/client')).getPrisma() as any;
+  const rows = await prisma.$queryRaw`SELECT value FROM "Setting" WHERE key = 'welcome_message' LIMIT 1` as Array<{ value: string }>;
+  return res.json({ welcome_message: rows && rows[0] ? rows[0].value : '' });
 });
 router.post('/v1/admin/settings', async (req, res) => {
   const { welcome_message } = (req.body || {}) as { welcome_message?: string };
   if (typeof welcome_message !== 'string') return res.status(400).json({ error: 'welcome_message required' });
-  const prisma = (await import('../db/client')).getPrisma();
-  await prisma.setting.upsert({ where: { key: 'welcome_message' }, update: { value: welcome_message }, create: { key: 'welcome_message', value: welcome_message } });
+  const prisma = (await import('../db/client')).getPrisma() as any;
+  await prisma.$executeRaw`INSERT INTO "Setting" (key, value) VALUES ('welcome_message', ${welcome_message}) ON CONFLICT (key) DO UPDATE SET value = ${welcome_message}`;
   return res.json({ ok: true });
 });
 

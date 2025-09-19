@@ -31,4 +31,9 @@ export async function setAgentClosingMessage(tgId: bigint, message: string) {
   return prisma.agent.update({ where: { tgId }, data: { closingMessage: message } });
 }
 
+export async function enableAgent(tgId: bigint) {
+  const prisma = getPrisma();
+  return prisma.agent.update({ where: { tgId }, data: { isActive: true } });
+}
+
 

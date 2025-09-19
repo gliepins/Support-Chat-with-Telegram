@@ -82,6 +82,12 @@ export async function closeTopic(conversationId: string): Promise<void> {
   await tgFetch('closeForumTopic', { chat_id: chatId, message_thread_id: threadId });
 }
 
+export async function deleteTopicByThreadId(threadId: number): Promise<void> {
+  const chatId = process.env.SUPPORT_GROUP_ID;
+  if (!chatId) throw new Error('SUPPORT_GROUP_ID not set');
+  await tgFetch('deleteForumTopic', { chat_id: chatId, message_thread_id: threadId });
+}
+
 export async function sendTopicMessage(conversationId: string, text: string): Promise<{ message_id: number }> {
   const prisma = getPrisma();
   const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
