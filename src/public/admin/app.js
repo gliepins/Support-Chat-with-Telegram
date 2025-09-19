@@ -16,6 +16,10 @@
   const searchInput = document.getElementById('search');
   const autoRefresh = document.getElementById('autoRefresh');
   const rows = document.getElementById('rows');
+  const selectAll = document.getElementById('selectAll');
+  const deleteSelected = document.getElementById('deleteSelected');
+  const deleteByStatus = document.getElementById('deleteByStatus');
+  const bulkStatus = document.getElementById('bulkStatus');
   const detail = document.getElementById('detail');
   const detailTitle = document.getElementById('detailTitle');
   let refreshTimer = null;
@@ -56,7 +60,8 @@
       }
       for (const c of list) {
         const tr = document.createElement('tr'); tr.setAttribute('data-id', c.id);
-        tr.innerHTML = `<td>${c.id}</td><td>${c.codename}</td><td>${c.customerName||''}</td><td><span class=\"badge\">${c.status}</span></td>`;
+        const cb = `<input type=\"checkbox\" class=\"rowSel\" data-id=\"${c.id}\">`;
+        tr.innerHTML = `<td>${cb}</td><td>${c.id}</td><td>${c.codename}</td><td>${c.customerName||''}</td><td><span class=\"badge\">${c.status}</span></td>`;
         const td = document.createElement('td');
         const btnClose = document.createElement('button'); btnClose.textContent='Close'; btnClose.onclick = async (e)=>{ e.stopPropagation(); try{ await postJSON(origin + '/v1/moderation/close', { id: c.id }); loadConversations(); }catch{ alert('Close failed'); } };
         const btnBlock = document.createElement('button'); btnBlock.textContent='Block'; btnBlock.style.marginLeft='6px'; btnBlock.onclick = async (e)=>{ e.stopPropagation(); try{ await postJSON(origin + '/v1/moderation/block', { id: c.id }); loadConversations(); }catch{ alert('Block failed'); } };
@@ -69,6 +74,30 @@
       const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.textContent = 'Failed to load. Check token and try again.'; tr.appendChild(td); rows.appendChild(tr);
     }
   }
+
+  // Bulk selection and deletion
+  selectAll.onclick = () => {
+    const checked = selectAll.checked;
+    rows.querySelectorAll('.rowSel').forEach((c)=>{ c.checked = checked });
+  };
+  deleteSelected.onclick = async () => {
+    const ids = Array.from(rows.querySelectorAll('.rowSel')).filter((c)=>c.checked).map((c)=>c.getAttribute('data-id')).filter(Boolean);
+    if (!ids.length) { bulkStatus.textContent = 'No rows selected'; setTimeout(()=>bulkStatus.textContent='',1200); return; }
+    try {
+      await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ ids }) });
+      bulkStatus.textContent = 'Deleted'; setTimeout(()=>bulkStatus.textContent='',1200);
+      loadConversations();
+    } catch { bulkStatus.textContent = 'Failed'; setTimeout(()=>bulkStatus.textContent='',1200); }
+  };
+  deleteByStatus.onclick = async () => {
+    const status = statusSel.value;
+    if (!confirm('Delete ALL conversations in status: '+status+' ?')) return;
+    try {
+      await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ status }) });
+      bulkStatus.textContent = 'Deleted'; setTimeout(()=>bulkStatus.textContent='',1200);
+      loadConversations();
+    } catch { bulkStatus.textContent = 'Failed'; setTimeout(()=>bulkStatus.textContent='',1200); }
+  };
 
   // Agents management
   const agentsRows = document.getElementById('agentsRows');

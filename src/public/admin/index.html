@@ -52,8 +52,13 @@ button{cursor:pointer}
             <input type="checkbox" id="autoRefresh"> Auto-refresh 15s
           </label>
         </div>
+        <div class="flex" style="gap:8px;margin:8px 0">
+          <button id="deleteSelected" style="background:#dc2626;color:#fff;border:0;padding:6px 10px;border-radius:6px">Delete Selected</button>
+          <button id="deleteByStatus" style="background:#b91c1c;color:#fff;border:0;padding:6px 10px;border-radius:6px">Delete All In Status</button>
+          <span id="bulkStatus"></span>
+        </div>
         <table class="table">
-          <thead><tr><th>Id</th><th>Codename</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+          <thead><tr><th><input type="checkbox" id="selectAll"></th><th>Id</th><th>Codename</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
