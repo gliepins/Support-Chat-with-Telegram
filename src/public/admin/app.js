@@ -83,9 +83,12 @@
   deleteSelected.onclick = async () => {
     const ids = Array.from(rows.querySelectorAll('.rowSel')).filter((c)=>c.checked).map((c)=>c.getAttribute('data-id')).filter(Boolean);
     if (!ids.length) { bulkStatus.textContent = 'No rows selected'; setTimeout(()=>bulkStatus.textContent='',1200); return; }
+    if (!confirm('Delete '+ids.length+' selected conversation(s)?')) return;
     try {
-      await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ ids }) });
-      bulkStatus.textContent = 'Deleted'; setTimeout(()=>bulkStatus.textContent='',1200);
+      const r = await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ ids }) });
+      const json = await r.json().catch(()=>({}));
+      bulkStatus.textContent = 'Deleted ' + (json && typeof json.deleted==='number' ? json.deleted : ids.length);
+      setTimeout(()=>bulkStatus.textContent='',1500);
       loadConversations();
     } catch { bulkStatus.textContent = 'Failed'; setTimeout(()=>bulkStatus.textContent='',1200); }
   };
@@ -93,8 +96,10 @@
     const status = statusSel.value;
     if (!confirm('Delete ALL conversations in status: '+status+' ?')) return;
     try {
-      await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ status }) });
-      bulkStatus.textContent = 'Deleted'; setTimeout(()=>bulkStatus.textContent='',1200);
+      const r = await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ status }) });
+      const json = await r.json().catch(()=>({}));
+      bulkStatus.textContent = 'Deleted ' + (json && typeof json.deleted==='number' ? json.deleted : '');
+      setTimeout(()=>bulkStatus.textContent='',1500);
       loadConversations();
     } catch { bulkStatus.textContent = 'Failed'; setTimeout(()=>bulkStatus.textContent='',1200); }
   };
