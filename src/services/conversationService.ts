@@ -3,7 +3,6 @@ import { getPrisma } from '../db/client';
 import { generateCodename } from './codename';
 import { ensureTopicForConversation, sendAgentMessage } from './telegramApi';
 import { broadcastToConversation } from '../ws/hub';
-import { broadcastToConversation } from '../ws/hub';
 import { getAgentNameByTgId } from './agentService';
 
 export function validateCustomerName(name: string): { ok: true } | { ok: false; reason: string } {
@@ -41,9 +40,8 @@ export async function createConversation(initialName?: string) {
     await ensureTopicForConversation(conversation.id);
     // Also send welcome to the customer side as first OUTBOUND message
     try {
-      const sPrisma = (await import('../db/client')).getPrisma();
-      const setting = await sPrisma.setting.findUnique({ where: { key: 'welcome_message' } });
-      const welcome = (setting?.value || '').trim();
+      const rows = await (prisma as any).$queryRaw`SELECT value FROM "Setting" WHERE key = 'welcome_message' LIMIT 1` as Array<{ value: string }>;
+      const welcome = (rows && rows[0] && rows[0].value ? rows[0].value : '').trim();
       if (welcome) {
         const msg = await addMessage(conversation.id, 'OUTBOUND', welcome);
         try { broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: msg.text, agent: 'Support' }); } catch {}

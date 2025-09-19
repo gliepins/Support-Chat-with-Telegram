@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { hashIp, signConversationToken } from '../services/auth';
 import { createConversation, setNickname, listMessagesForConversation, getAssignedAgentName } from '../services/conversationService';
+import { getPrisma } from '../db/client';
 import { updateTopicTitleFromConversation } from '../services/telegramApi';
 import { requireConversationAuth } from '../middleware/conversationAuth';
 import { ipRateLimit, keyRateLimit } from '../middleware/rateLimit';
@@ -45,6 +46,8 @@ export default router;
 router.get('/v1/conversations/:id/messages', async (req, res) => {
   try {
     const id = req.params.id;
+    const prisma = getPrisma();
+    const conv = await prisma.conversation.findUnique({ where: { id }, select: { status: true } });
     const msgs = await listMessagesForConversation(id);
     let agent: string | null = null;
     try { agent = await getAssignedAgentName(id); } catch {}
@@ -54,7 +57,7 @@ router.get('/v1/conversations/:id/messages', async (req, res) => {
       }
       return m as any;
     });
-    return res.json(enriched);
+    return res.json({ status: conv?.status || 'OPEN_UNCLAIMED', messages: enriched });
   } catch (e: any) {
     return res.status(400).json({ error: 'bad request' });
   }
