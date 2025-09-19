@@ -20,7 +20,7 @@ This whitepaper documents the design, security posture, operational model, and r
   - Anonymous chat widget establishes a conversation via REST and upgrades to WS.
   - Optional nickname; messages are plain text.
   - Embeddable script served at `/widget.js` (deployed at `https://cms.autoroad.lv/widget.js`).
-  - Recent features: theming from site CSS vars, left/right positioning, unread badge, timestamps, auto‑reconnect and history restore, reconnect/offline banner, draft persistence, multiline input with auto‑wrap (Enter=send; Shift+Enter=newline).
+  - Recent features: theming from site CSS vars, left/right positioning, unread badge, timestamps, auto‑reconnect and history restore, reconnect/offline banner, draft persistence, multiline input with auto‑wrap (Enter=send; Shift+Enter=newline), persistent panel state, agent labels ("[name] said:"), joined bubble, closed status note, local echo + de‑dup, cookie fallback for session, automatic session refresh after repeated WS failures.
 - **API Service (this repo)**
   - Node.js + TypeScript + Express for REST; ws for WebSocket; Prisma for DB access.
   - Telegram Bot webhook endpoint to bridge between Telegram and web.
@@ -30,6 +30,7 @@ This whitepaper documents the design, security posture, operational model, and r
   - Agents interact via native Telegram apps (mobile/desktop).
 - **Database** (primary: PostgreSQL; pluggable to other SQL engines via Prisma)
   - Tables: conversations, messages, audit_logs, agents.
+  - Settings: simple key/value (e.g., `welcome_message`).
 
 ## 3. Data Model (Prisma)
 
@@ -97,7 +98,7 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - POST `/v1/conversations/start` → { conversation_id, token, codename }
   - WS `/v1/ws?token=...` — bi‑directional text messages
   - PATCH `/v1/conversations/:id/name` — set nickname (rate‑limited)
-  - GET `/v1/conversations/:id/messages` — fetch messages for widget history restore
+  - GET `/v1/conversations/:id/messages` — fetch messages and status for widget history restore
 - **Internal/admin (SERVICE_TOKEN)**
   - GET `/v1/conversations?status=open|closed|blocked|all&q=<term>` — list (search by codename/name)
   - GET `/v1/conversations/:id` — detail with messages
@@ -108,7 +109,10 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - GET `/v1/admin/agents` — list agents
   - POST `/v1/admin/agents/upsert` — create/update agent display name by Telegram user id
   - POST `/v1/admin/agents/disable` — disable agent
+  - POST `/v1/admin/agents/enable` — enable agent
+  - POST `/v1/admin/agents/closing-message` — set agent closing message
   - POST `/v1/admin/conversations/bulk-delete` — delete by ids or by status filter
+  - GET `/v1/admin/settings` / POST `/v1/admin/settings` — e.g., `welcome_message`
 - **Telegram webhook**
   - POST `/v1/telegram/webhook/<secret>` — receives Updates; only handles messages in SUPPORT_GROUP_ID; routes by `message_thread_id`.
   - Inline buttons in Topics provide Claim/Close actions; `/note` supported for private notes.
@@ -126,6 +130,7 @@ OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 - Closing: `closeForumTopic` when conversation closes.
 - Commands/buttons: `/note`, Claim/Close via inline keyboards + `answerCallbackQuery`. (Rename via API.)
   - Agent identity: Admin sets display names tied to Telegram ids; widget shows "[agent] said:" and “joined” bubbles.
+  - Topic lifecycle: topics are created on conversation start; on admin bulk delete by ids, corresponding topics are deleted.
 
 ## 9. Nginx and Systemd Integration (example)
 
@@ -207,4 +212,10 @@ Additional runtime counters to consider: bridge failures, webhook auth failures,
   - Rate limits and blocklist work.
 
 ---
-Last updated: 2025-09-19 (cms.autoroad.lv pilot: agents, widget polish, admin search/bulk delete, webhook hardening)
+Last updated: 2025-09-19 (EOD)
+
+Today’s highlights:
+- Admin: agents tab (enable/disable, closing message), bulk delete deletes Telegram topics, metrics auto-refresh, conversations list polish, detail view fixed.
+- Widget: multiline input, draft persistence, panel auto-open, agent labels, join bubble with display name, closed-state notices, stronger session continuity (cookie fallback, auto-refresh session after WS failures), welcome shown only to customers.
+- Bot/Service: require claim before reply; notify on closed; /codename; immediate topic creation on start.
+- Settings: welcome_message stored server-side and applied on new conversation.
