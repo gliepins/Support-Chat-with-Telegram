@@ -34,6 +34,8 @@ export async function createConversation(initialName?: string) {
         : {}),
     } as Prisma.ConversationCreateInput,
   });
+  // Proactively create the Telegram topic and post welcome (if configured)
+  try { await ensureTopicForConversation(conversation.id); } catch {}
   return conversation;
 }
 
