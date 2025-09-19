@@ -146,5 +146,5 @@
     }
   };
 
-  (function init(){ tokenInput.value = getToken(); statusSel.value='all'; refreshMetricsBtn.click(); loadConversations(); loadAgents(); })();
+  (function init(){ tokenInput.value = getToken(); statusSel.value='all'; refreshMetricsBtn.click(); loadSettings(); loadConversations(); loadAgents(); })();
 })();
