@@ -20,6 +20,7 @@ This whitepaper documents the design, security posture, operational model, and r
   - Anonymous chat widget establishes a conversation via REST and upgrades to WS.
   - Optional nickname; messages are plain text.
   - Embeddable script served at `/widget.js` (deployed at `https://cms.autoroad.lv/widget.js`).
+  - Recent features: theming from site CSS vars, left/right positioning, unread badge, timestamps, auto‑reconnect and history restore, reconnect/offline banner, draft persistence, multiline input with auto‑wrap (Enter=send; Shift+Enter=newline).
 - **API Service (this repo)**
   - Node.js + TypeScript + Express for REST; ws for WebSocket; Prisma for DB access.
   - Telegram Bot webhook endpoint to bridge between Telegram and web.
@@ -28,7 +29,7 @@ This whitepaper documents the design, security posture, operational model, and r
   - One Supergroup with Topics enabled; each conversation maps to a Topic.
   - Agents interact via native Telegram apps (mobile/desktop).
 - **Database** (primary: PostgreSQL; pluggable to other SQL engines via Prisma)
-  - Tables: conversations, messages, audit_logs.
+  - Tables: conversations, messages, audit_logs, agents.
 
 ## 3. Data Model (Prisma)
 
@@ -40,6 +41,9 @@ This whitepaper documents the design, security posture, operational model, and r
   - id, conversationId, direction (INBOUND/OUTBOUND), text, timestamps
 - **AuditLog**
   - id, conversationId, actor (telegram:<id> or system), action, meta (JSON), createdAt
+
+- **Agent**
+  - tgId (Telegram user id, bigint), displayName, isActive, timestamps
 
 The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sqlserver/sqlite with minimal type adjustments later.
 
@@ -76,7 +80,7 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
 - **Service authorization**
   - Internal/admin endpoints protected by `X-Internal-Auth: SERVICE_TOKEN` stored outside repo.
 - **Telegram webhook hardening**
-  - Webhook path includes a secret segment; also verify `X-Telegram-Bot-Api-Secret-Token` when configured.
+  - Webhook path includes a secret segment; verify `X-Telegram-Bot-Api-Secret-Token` (enforced in production).
   - Reverse proxy IP allowlist for Telegram’s IP ranges (optional but recommended).
 - **Input controls**
   - Strip HTML; allow basic Markdown optionally; hard limit message length.
@@ -93,14 +97,23 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - POST `/v1/conversations/start` → { conversation_id, token, codename }
   - WS `/v1/ws?token=...` — bi‑directional text messages
   - PATCH `/v1/conversations/:id/name` — set nickname (rate‑limited)
+  - GET `/v1/conversations/:id/messages` — fetch messages for widget history restore
 - **Internal/admin (SERVICE_TOKEN)**
-  - GET `/v1/conversations?status=open|closed` — list
+  - GET `/v1/conversations?status=open|closed|blocked|all&q=<term>` — list (search by codename/name)
   - GET `/v1/conversations/:id` — detail with messages
   - POST `/v1/moderation/close` — close
   - POST `/v1/moderation/block` — block
+  - GET `/v1/conversations/:id/export.json` — export transcript as JSON
+  - GET `/v1/conversations/:id/export.csv` — export transcript as CSV
+  - GET `/v1/admin/agents` — list agents
+  - POST `/v1/admin/agents/upsert` — create/update agent display name by Telegram user id
+  - POST `/v1/admin/agents/disable` — disable agent
+  - POST `/v1/admin/conversations/bulk-delete` — delete by ids or by status filter
 - **Telegram webhook**
   - POST `/v1/telegram/webhook/<secret>` — receives Updates; only handles messages in SUPPORT_GROUP_ID; routes by `message_thread_id`.
   - Inline buttons in Topics provide Claim/Close actions; `/note` supported for private notes.
+  - Commands for agents: `/claim`, `/close`, `/note`, `/myname`|`/whoami` (show assigned display name), `/myid`.
+  - Requires claim before outbound messages are bridged to customer.
 
 OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 
@@ -112,6 +125,7 @@ OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 - Editing title: `editForumTopic` when nickname or badges change.
 - Closing: `closeForumTopic` when conversation closes.
 - Commands/buttons: `/note`, Claim/Close via inline keyboards + `answerCallbackQuery`. (Rename via API.)
+  - Agent identity: Admin sets display names tied to Telegram ids; widget shows "[agent] said:" and “joined” bubbles.
 
 ## 9. Nginx and Systemd Integration (example)
 
@@ -147,6 +161,8 @@ TELEGRAM_HEADER_SECRET=<optional>
 - Metrics: `/metrics` endpoint provides basic counters; extend as needed.
 - Backups: rely on host DB backups (e.g., `autoroad-db-backup.timer`). Include support_chat DB in retention policy.
 
+Additional runtime counters to consider: bridge failures, webhook auth failures, rate limit hits, auto‑close counts, topic create/edit errors.
+
 ## 13. Development & Local Run
 
 - See `documents/DEVELOPMENT.md` for Node/Prisma setup.
@@ -154,13 +170,20 @@ TELEGRAM_HEADER_SECRET=<optional>
 
 ## 14. Roadmap
 
-- **Short term (MVP)**
-  - Implement REST/WS + Telegram bridge; nickname + note; reminders + auto‑close; rate limits; OpenAPI spec.
+- **Completed (Pilot)**
+  - REST/WS bridge; widget with reconnect/history; nickname; agent notes; reminders + 5m auto‑close; rate limits; admin UI with search/export and bulk delete; agents directory with display names; strict webhook header; claim‑before‑reply.
+- **Next (Short term)**
+  - Admin: pagination, unread indicators, per‑conversation reopen/close metrics; stricter SERVICE_TOKEN rotation helper.
+  - Widget: offline mode copy and CTA, theme polish, sound/vibration toggle, “typing…” indicator.
+  - OpenAPI: publish `docs/openapi.yaml`; generate client stubs.
+  - Observability: expand `/metrics`; structured audit export.
 - **Medium term**
-  - Attachments (optional), canned replies, basic analytics, export transcripts (CSV/JSON).
-  - MySQL/SQLite CI builds via Prisma matrix; adapter abstraction if needed.
+  - Attachments (images, small files) with scanning and size limits.
+  - Canned replies and shortcuts in Telegram via command menu.
+  - Admin auth (basic RBAC) for multi‑operator environments.
 - **Long term**
-  - Lightweight admin UI, RBAC, multi‑channel adapters; multi‑tenant.
+  - Multi‑tenancy (per‑site isolation and branding); per‑tenant SERVICE_TOKEN/JWT signing keys.
+  - Pluggable channels (email webhook, WhatsApp/Signal bridges).
 
 ## 15. Security Summary
 
@@ -184,4 +207,4 @@ TELEGRAM_HEADER_SECRET=<optional>
   - Rate limits and blocklist work.
 
 ---
-Last updated: 2025-09-18 (cms.autoroad.lv pilot live: REST/WS, widget, Telegram bridge with inline controls, reminders, metrics)
+Last updated: 2025-09-19 (cms.autoroad.lv pilot: agents, widget polish, admin search/bulk delete, webhook hardening)
