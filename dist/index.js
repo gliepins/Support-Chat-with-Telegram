@@ -58,6 +58,10 @@ app.use((0, cors_1.default)({ origin: true, credentials: false }));
 app.use((0, helmet_1.default)());
 app.use((0, pino_http_1.default)({ logger }));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// Quiet favicon to avoid 401/404 noise in admin
+app.get('/favicon.ico', (_req, res) => {
+    res.status(204).end();
+});
 app.get('/metrics', async (_req, res) => {
     try {
         const { getPrisma } = await Promise.resolve().then(() => __importStar(require('./db/client')));
@@ -86,6 +90,8 @@ app.get('/widget.js', (_req, res) => {
     res.type('application/javascript');
     res.sendFile(path_1.default.join(__dirname, 'public', 'widget.js'));
 });
+// Minimal admin UI (static)
+app.use('/admin', express_1.default.static(path_1.default.join(__dirname, 'public', 'admin')));
 app.use(public_1.default);
 // Mount Telegram webhook BEFORE admin routes to avoid service auth capturing it
 app.use((0, webhook_1.telegramRouter)());

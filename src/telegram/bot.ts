@@ -1,6 +1,7 @@
 import pino from 'pino';
 import { getPrisma } from '../db/client';
 import { addMessage, closeConversation, recordAudit } from '../services/conversationService';
+import { getAgentNameByTgId } from '../services/agentService';
 import { closeTopic, updateTopicTitleFromConversation, sendAgentMessage } from '../services/telegramApi';
 import { broadcastToConversation } from '../ws/hub';
 import { Prisma } from '@prisma/client';
@@ -43,6 +44,25 @@ export async function handleTelegramUpdate(update: TgUpdate) {
   const text: string | undefined = msg.text || msg.caption;
   if (!text) return;
 
+  // /myname or /whoami (reply with assigned agent display name)
+  if (typeof text === 'string' && (/^\/myname\b/.test(text) || /^\/whoami\b/.test(text))) {
+    const tgIdNum = msg.from?.id as number | undefined;
+    if (!tgIdNum) return;
+    let reply = '';
+    try {
+      const name = await getAgentNameByTgId(BigInt(tgIdNum));
+      if (name) {
+        reply = `Your agent name is: ${name}`;
+      } else {
+        reply = 'No agent name set. Ask an admin to assign one in Admin → Agents.';
+      }
+    } catch {
+      reply = 'Could not look up your agent name right now.';
+    }
+    try { await sendAgentMessage(conversation.id, reply); } catch {}
+    return;
+  }
+
   // /note command (private note; not sent to customer)
   if (typeof text === 'string' && text.startsWith('/note')) {
     const note = text.replace(/^\/note\s*/, '').trim();
@@ -73,7 +93,11 @@ export async function handleTelegramUpdate(update: TgUpdate) {
   }
 
   const created = await addMessage(conversation.id, 'OUTBOUND', text);
-  broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: created.text });
+  let agentName: string | null = null;
+  if (msg.from?.id) {
+    try { agentName = await getAgentNameByTgId(BigInt(msg.from.id)); } catch {}
+  }
+  broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: created.text, agent: agentName || (msg.from?.username ? '@'+msg.from.username : undefined) });
 }
 
 

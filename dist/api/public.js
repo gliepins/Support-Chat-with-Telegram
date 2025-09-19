@@ -38,4 +38,15 @@ router.patch('/v1/conversations/:id/name', conversationAuth_1.requireConversatio
     }
 });
 exports.default = router;
+// Lightweight messages fetch for restoring widget state
+router.get('/v1/conversations/:id/messages', async (req, res) => {
+    try {
+        const id = req.params.id;
+        const msgs = await (0, conversationService_1.listMessagesForConversation)(id);
+        return res.json(msgs);
+    }
+    catch (e) {
+        return res.status(400).json({ error: 'bad request' });
+    }
+});
 //# sourceMappingURL=public.js.map

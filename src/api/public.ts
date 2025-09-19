@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { hashIp, signConversationToken } from '../services/auth';
-import { createConversation, setNickname } from '../services/conversationService';
+import { createConversation, setNickname, listMessagesForConversation } from '../services/conversationService';
 import { updateTopicTitleFromConversation } from '../services/telegramApi';
 import { requireConversationAuth } from '../middleware/conversationAuth';
 import { ipRateLimit, keyRateLimit } from '../middleware/rateLimit';
@@ -40,5 +40,16 @@ router.patch(
 );
 
 export default router;
+
+// Lightweight messages fetch for restoring widget state
+router.get('/v1/conversations/:id/messages', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const msgs = await listMessagesForConversation(id);
+    return res.json(msgs);
+  } catch (e: any) {
+    return res.status(400).json({ error: 'bad request' });
+  }
+});
 
 

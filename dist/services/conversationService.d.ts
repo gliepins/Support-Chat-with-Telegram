@@ -31,13 +31,13 @@ export declare function setNickname(conversationId: string, name: string): Promi
     updatedAt: Date;
 }>;
 export declare function listConversations(status?: string): Promise<{
+    assignedAgentTgId: string | null;
     id: string;
     codename: string;
     customerName: string | null;
     aboutNote: string | null;
     threadId: number | null;
     status: import(".prisma/client").$Enums.ConversationStatus;
-    assignedAgentTgId: bigint | null;
     lastCustomerAt: Date;
     lastAgentAt: Date;
     createdAt: Date;
@@ -64,6 +64,11 @@ export declare function getConversationWithMessages(conversationId: string): Pro
     createdAt: Date;
     updatedAt: Date;
 }) | null>;
+export declare function listMessagesForConversation(conversationId: string): Promise<{
+    createdAt: Date;
+    direction: import(".prisma/client").$Enums.MessageDirection;
+    text: string;
+}[]>;
 export declare function addMessage(conversationId: string, direction: 'INBOUND' | 'OUTBOUND', text: string): Promise<{
     id: string;
     createdAt: Date;

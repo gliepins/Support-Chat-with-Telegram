@@ -5,6 +5,7 @@ exports.createConversation = createConversation;
 exports.setNickname = setNickname;
 exports.listConversations = listConversations;
 exports.getConversationWithMessages = getConversationWithMessages;
+exports.listMessagesForConversation = listMessagesForConversation;
 exports.addMessage = addMessage;
 exports.closeConversation = closeConversation;
 exports.blockConversation = blockConversation;
@@ -57,14 +58,41 @@ async function setNickname(conversationId, name) {
 }
 async function listConversations(status) {
     const prisma = (0, client_1.getPrisma)();
-    const where = status ? { status: status } : {};
-    return prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' } });
+    let where = {};
+    if (status) {
+        if (status.toLowerCase() === 'open') {
+            where = { status: { in: ['OPEN_UNCLAIMED', 'OPEN_ASSIGNED', 'AWAITING_CUSTOMER'] } };
+        }
+        else if (status.toLowerCase() === 'closed') {
+            where = { status: 'CLOSED' };
+        }
+        else if (status.toLowerCase() === 'blocked') {
+            where = { status: 'BLOCKED' };
+        }
+        else if (status.toLowerCase() === 'all') {
+            where = {};
+        }
+    }
+    const list = await prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' } });
+    // Ensure JSON-safe (BigInt -> string)
+    return list.map((c) => ({
+        ...c,
+        assignedAgentTgId: c.assignedAgentTgId == null ? null : c.assignedAgentTgId.toString(),
+    }));
 }
 async function getConversationWithMessages(conversationId) {
     const prisma = (0, client_1.getPrisma)();
     return prisma.conversation.findUnique({
         where: { id: conversationId },
         include: { messages: { orderBy: { createdAt: 'asc' } }, auditLogs: false },
+    });
+}
+async function listMessagesForConversation(conversationId) {
+    const prisma = (0, client_1.getPrisma)();
+    return prisma.message.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true, direction: true, text: true },
     });
 }
 async function addMessage(conversationId, direction, text) {

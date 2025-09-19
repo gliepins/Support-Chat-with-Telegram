@@ -52,8 +52,24 @@ export async function setNickname(conversationId: string, name: string) {
 
 export async function listConversations(status?: string) {
   const prisma = getPrisma();
-  const where = status ? { status: status as any } : {};
-  return prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' } });
+  let where: any = {};
+  if (status) {
+    if (status.toLowerCase() === 'open') {
+      where = { status: { in: ['OPEN_UNCLAIMED', 'OPEN_ASSIGNED', 'AWAITING_CUSTOMER'] } };
+    } else if (status.toLowerCase() === 'closed') {
+      where = { status: 'CLOSED' };
+    } else if (status.toLowerCase() === 'blocked') {
+      where = { status: 'BLOCKED' };
+    } else if (status.toLowerCase() === 'all') {
+      where = {};
+    }
+  }
+  const list = await prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' } });
+  // Ensure JSON-safe (BigInt -> string)
+  return list.map((c) => ({
+    ...c,
+    assignedAgentTgId: c.assignedAgentTgId == null ? null : c.assignedAgentTgId.toString(),
+  }));
 }
 
 export async function getConversationWithMessages(conversationId: string) {
@@ -61,6 +77,15 @@ export async function getConversationWithMessages(conversationId: string) {
   return prisma.conversation.findUnique({
     where: { id: conversationId },
     include: { messages: { orderBy: { createdAt: 'asc' } }, auditLogs: false },
+  });
+}
+
+export async function listMessagesForConversation(conversationId: string) {
+  const prisma = getPrisma();
+  return prisma.message.findMany({
+    where: { conversationId },
+    orderBy: { createdAt: 'asc' },
+    select: { createdAt: true, direction: true, text: true },
   });
 }
 

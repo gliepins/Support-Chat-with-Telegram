@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Support Admin</title>
+<style>
+body{font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial;background:#0b1020;color:#e6e9f0;margin:0}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#11183a;border-bottom:1px solid #263057}
+main{padding:16px}
+input,select,button{font:14px system-ui;border-radius:6px;border:1px solid #2a3669;background:#0f1530;color:#e6e9f0;padding:6px 8px}
+button{cursor:pointer}
+.card{background:#0f1530;border:1px solid #263057;border-radius:10px;padding:12px;margin:12px 0}
+.flex{display:flex;gap:12px;align-items:center}
+.table{width:100%;border-collapse:collapse;margin-top:8px}
+.table th,.table td{border-bottom:1px solid #263057;padding:8px;text-align:left}
+.badge{padding:2px 6px;border-radius:999px;border:1px solid #3b82f6;color:#93c5fd}
+#saveStatus{font:12px system-ui;color:#93c5fd}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+#detail{white-space:pre-wrap;background:#0b1433;border:1px solid #263057;border-radius:8px;min-height:180px;padding:10px}
+</style>
+<header>
+  <div>Support Admin</div>
+  <div class="flex">
+    <input id="token" placeholder="SERVICE_TOKEN" size="48">
+    <button id="saveToken">Save</button>
+    <span id="saveStatus"></span>
+  </div>
+</header>
+<main>
+  <div class="grid">
+    <div>
+      <div class="card">
+        <div class="flex">
+          <div>
+            <div>Metrics</div>
+            <pre id="metrics" style="white-space:pre-wrap"></pre>
+          </div>
+          <button id="refreshMetrics">Refresh</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="flex">
+          <div>Conversations</div>
+          <select id="status">
+            <option value="all">all</option>
+            <option value="open">open</option>
+            <option value="closed">closed</option>
+            <option value="blocked">blocked</option>
+          </select>
+          <button id="load">Load</button>
+          <label class="flex" style="gap:6px;margin-left:auto">
+            <input type="checkbox" id="autoRefresh"> Auto-refresh 15s
+          </label>
+        </div>
+        <table class="table">
+          <thead><tr><th>Id</th><th>Codename</th><th>Name</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="flex" style="justify-content:space-between">
+          <div>Agents</div>
+          <div id="agentsStatus" style="opacity:.8"></div>
+        </div>
+        <div class="flex" style="gap:8px;margin:8px 0">
+          <input id="agentTgId" placeholder="Telegram user id (numeric)" size="24">
+          <input id="agentName" placeholder="Display name" size="24">
+          <button id="agentSave">Save/Update</button>
+          <button id="agentsReload">Reload</button>
+        </div>
+        <table class="table">
+          <thead><tr><th>tgId</th><th>displayName</th><th>isActive</th><th>Actions</th></tr></thead>
+          <tbody id="agentsRows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <div class="card">
+        <div class="flex" style="justify-content:space-between">
+          <div>Conversation detail</div>
+          <div id="detailTitle" style="opacity:.8"></div>
+        </div>
+        <div id="detail">Select a conversation to view messages…</div>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="./app.js" defer></script>

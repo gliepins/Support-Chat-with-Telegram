@@ -23,6 +23,10 @@ app.use(helmet());
 app.use(pinoHttp({ logger }));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+// Quiet favicon to avoid 401/404 noise in admin
+app.get('/favicon.ico', (_req, res) => {
+  res.status(204).end();
+});
 app.get('/metrics', async (_req, res) => {
   try {
     const { getPrisma } = await import('./db/client');
@@ -52,6 +56,8 @@ app.get('/widget.js', (_req, res) => {
   res.type('application/javascript');
   res.sendFile(path.join(__dirname, 'public', 'widget.js'));
 });
+// Minimal admin UI (static)
+app.use('/admin', express.static(path.join(__dirname, 'public', 'admin')));
 app.use(publicRoutes);
 // Mount Telegram webhook BEFORE admin routes to avoid service auth capturing it
 app.use(telegramRouter());

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireServiceAuth } from '../middleware/serviceAuth';
 import { blockConversation, closeConversation, getConversationWithMessages, listConversations } from '../services/conversationService';
+import { listAgents, upsertAgent, disableAgent } from '../services/agentService';
 import { Parser } from 'json2csv';
 
 const router = Router();
@@ -8,9 +9,13 @@ const router = Router();
 router.use(requireServiceAuth);
 
 router.get('/v1/conversations', async (req, res) => {
-  const status = (req.query.status as string | undefined) || undefined;
-  const list = await listConversations(status);
-  return res.json(list);
+  try {
+    const status = (req.query.status as string | undefined) || 'all';
+    const list = await listConversations(status);
+    return res.json(list);
+  } catch (e: any) {
+    return res.status(500).json({ error: 'internal_error' });
+  }
 });
 
 router.get('/v1/conversations/:id', async (req, res) => {
@@ -58,6 +63,26 @@ router.post('/v1/moderation/block', async (req, res) => {
   if (!id) return res.status(400).json({ error: 'id required' });
   const conv = await blockConversation(id, 'system');
   return res.json(conv);
+});
+
+// Agents admin
+router.get('/v1/admin/agents', async (_req, res) => {
+  const agents = await listAgents();
+  return res.json(agents);
+});
+
+router.post('/v1/admin/agents/upsert', async (req, res) => {
+  const { tgId, displayName } = (req.body || {}) as { tgId?: string | number; displayName?: string };
+  if (!tgId || !displayName) return res.status(400).json({ error: 'tgId and displayName required' });
+  const result = await upsertAgent(BigInt(tgId), displayName.trim());
+  return res.json({ tgId: result.tgId.toString(), displayName: result.displayName, isActive: result.isActive });
+});
+
+router.post('/v1/admin/agents/disable', async (req, res) => {
+  const { tgId } = (req.body || {}) as { tgId?: string | number };
+  if (!tgId) return res.status(400).json({ error: 'tgId required' });
+  const result = await disableAgent(BigInt(tgId));
+  return res.json({ tgId: result.tgId.toString(), isActive: result.isActive });
 });
 
 export default router;

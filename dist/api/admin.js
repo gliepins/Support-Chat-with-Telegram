@@ -7,9 +7,14 @@ const json2csv_1 = require("json2csv");
 const router = (0, express_1.Router)();
 router.use(serviceAuth_1.requireServiceAuth);
 router.get('/v1/conversations', async (req, res) => {
-    const status = req.query.status || undefined;
-    const list = await (0, conversationService_1.listConversations)(status);
-    return res.json(list);
+    try {
+        const status = req.query.status || 'all';
+        const list = await (0, conversationService_1.listConversations)(status);
+        return res.json(list);
+    }
+    catch (e) {
+        return res.status(500).json({ error: 'internal_error' });
+    }
 });
 router.get('/v1/conversations/:id', async (req, res) => {
     const conv = await (0, conversationService_1.getConversationWithMessages)(req.params.id);
