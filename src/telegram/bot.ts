@@ -64,6 +64,19 @@ export async function handleTelegramUpdate(update: TgUpdate) {
 
   const text: string | undefined = msg.text || msg.caption;
   if (!text) return;
+  // /codename (set conversation codename silently)
+  if (typeof text === 'string' && text.startsWith('/codename')) {
+    const rest = text.replace(/^\/codename\s*/, '').trim();
+    if (rest.length < 2 || rest.length > 48) {
+      try { await sendAgentMessage(conversation.id, 'Codename must be 2-48 characters.'); } catch {}
+      return;
+    }
+    await prisma.conversation.update({ where: { id: conversation.id }, data: { codename: rest } });
+    await recordAudit(conversation.id, `telegram:${msg.from?.id ?? 'unknown'}`, 'set_codename', { length: rest.length });
+    try { await updateTopicTitleFromConversation(conversation.id); } catch {}
+    try { await sendAgentMessage(conversation.id, `Codename updated.`); } catch {}
+    return;
+  }
 
   // /myname or /whoami (reply with assigned agent display name)
   if (typeof text === 'string' && (/^\/myname\b/.test(text) || /^\/whoami\b/.test(text))) {

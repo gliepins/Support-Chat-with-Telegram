@@ -11,7 +11,6 @@
   const saveBtn = document.getElementById('saveToken');
   const saveStatus = document.getElementById('saveStatus');
   const refreshMetricsBtn = document.getElementById('refreshMetrics');
-  const loadBtn = document.getElementById('load');
   const statusSel = document.getElementById('status');
   const searchInput = document.getElementById('search');
   const autoRefresh = document.getElementById('autoRefresh');
@@ -134,7 +133,9 @@
   };
   agentsReload.onclick = loadAgents;
 
-  loadBtn.onclick = loadConversations;
+  statusSel.onchange = loadConversations;
+  // debounce dynamic search (3+ chars)
+  let searchTimer = null; searchInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer = setTimeout(()=>{ const q=(searchInput.value||'').trim(); if(q.length===0 || q.length>=3){ loadConversations(); } }, 250); });
   autoRefresh.onchange = () => {
     if (autoRefresh.checked) {
       refreshTimer = setInterval(() => { loadConversations(); }, 15000);
