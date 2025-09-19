@@ -4,7 +4,6 @@ import { addMessage, closeConversation, recordAudit } from '../services/conversa
 import { getAgentNameByTgId } from '../services/agentService';
 import { closeTopic, updateTopicTitleFromConversation, sendAgentMessage, sendGroupMessage } from '../services/telegramApi';
 import { broadcastToConversation } from '../ws/hub';
-import { broadcastToConversation } from '../ws/hub';
 import { Prisma } from '@prisma/client';
 import { setNickname } from '../services/conversationService';
 
