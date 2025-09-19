@@ -32,7 +32,7 @@
     + '.scw-time{opacity:.7;font:11px sans-serif}\n'
     + '.scw-agent{opacity:.85;font:11px sans-serif;margin-bottom:2px}\n'
     + '.scw-input{display:flex;border-top:1px solid '+COLORS.border+'}\n'
-    + '.scw-input input{flex:1;border:0;padding:10px;font:14px sans-serif;outline:none;background:'+COLORS.bgDefault+';color:'+COLORS.textPrimary+'}\n'
+    + '.scw-input textarea{flex:1;border:0;padding:10px;font:14px sans-serif;outline:none;background:'+COLORS.bgDefault+';color:'+COLORS.textPrimary+';resize:none;min-height:38px;max-height:140px;line-height:1.35;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}\n'
     + '.scw-input button{border:0;background:'+COLORS.primary+';color:'+COLORS.textInverse+';padding:0 12px;font:14px sans-serif;cursor:pointer}\n'
     + '@media (max-width: 480px){.scw-panel{width:92vw;height:70vh}}\n';
 
@@ -52,7 +52,7 @@
     var head=el('div','scw-head'); var title=el('div','', 'Support'); var actions=el('div','scw-actions'); var edit=el('div','scw-edit','✎'); var close=el('div','', '×'); actions.appendChild(edit); actions.appendChild(close); head.appendChild(title); head.appendChild(actions);
     var banner=el('div','scw-banner','Reconnecting…');
     var body=el('div','scw-body');
-    var inputWrap=el('div','scw-input'); var input=el('input'); input.placeholder='Type a message…'; var sendBtn=el('button','', 'Send'); inputWrap.appendChild(input); inputWrap.appendChild(sendBtn);
+    var inputWrap=el('div','scw-input'); var input=el('textarea'); input.placeholder='Type a message…'; var sendBtn=el('button','', 'Send'); inputWrap.appendChild(input); inputWrap.appendChild(sendBtn);
     panel.appendChild(head); panel.appendChild(banner); panel.appendChild(body); panel.appendChild(inputWrap); d.body.appendChild(btn); d.body.appendChild(panel);
 
     var ws=null, connecting=false, queue=[], unread=0, reconnectAttempts=0;
@@ -76,8 +76,12 @@
 
     var editing=false; edit.onclick=function(){ if(editing) return; editing=true; ensureSession(false).then(function(s){ var current=store.getItem('scw:name')||''; var wrap=el('div','scw-name-edit'); var inp=el('input'); inp.value=current; inp.placeholder='Your name'; var save=el('button','scw-name-btn','Save'); var cancel=el('button','scw-name-btn scw-name-cancel','Cancel'); wrap.appendChild(inp); wrap.appendChild(save); wrap.appendChild(cancel); head.insertBefore(wrap, actions); function done(){ try{ head.removeChild(wrap); }catch(_){ } editing=false; } cancel.onclick=done; save.onclick=function(){ var name=inp.value.trim(); if(!name){ done(); return; } patchName(origin, store.getItem('scw:id'), (store.getItem('scw:token')||''), name).then(function(){ store.setItem('scw:name',name); updateTitle(); done(); }).catch(function(){ alert('Could not update name right now. Please try later.'); done(); }); }; inp.addEventListener('keydown',function(e){ if(e.key==='Enter') save.onclick(); if(e.key==='Escape') cancel.onclick(); }); setTimeout(function(){ try{ inp.focus(); inp.select(); }catch(_){ } }, 0); }); };
 
-    sendBtn.onclick=function(){var t=input.value.trim();if(!t)return; input.value=''; sendText(t); };
-    input.addEventListener('keydown',function(e){if(e.key==='Enter')sendBtn.onclick()});
+    function autosize(){ input.style.height='auto'; var h=Math.min(140, Math.max(38, input.scrollHeight)); input.style.height=h+'px'; }
+    input.addEventListener('input', function(){ store.setItem('scw:draft', input.value||''); autosize(); });
+    sendBtn.onclick=function(){var t=input.value.trim();if(!t)return; input.value=''; store.removeItem('scw:draft'); autosize(); sendText(t); };
+    input.addEventListener('keydown',function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendBtn.onclick(); } });
+    // restore draft
+    var draft=store.getItem('scw:draft'); if(draft){ input.value=draft; setTimeout(autosize,0); }
   }
   w.SupportChat=w.SupportChat||{};w.SupportChat.init=init;
 })();
