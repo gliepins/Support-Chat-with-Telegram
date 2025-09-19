@@ -45,7 +45,8 @@
         const id = tr.getAttribute('data-id'); if(!id) return;
         detail.textContent = 'Loading…'; detailTitle.textContent = id;
         try {
-          const msgs = await fetchJSON(origin + '/v1/conversations/' + encodeURIComponent(id) + '/messages');
+          const payload = await fetchJSON(origin + '/v1/conversations/' + encodeURIComponent(id) + '/messages');
+          const msgs = Array.isArray(payload) ? payload : (payload && payload.messages ? payload.messages : []);
           if (!Array.isArray(msgs) || msgs.length === 0) { detail.textContent = 'No messages.'; return; }
           detail.textContent = msgs.map(m => `${new Date(m.createdAt).toLocaleString()}  ${m.direction}: ${m.text}`).join('\n');
         } catch { detail.textContent = 'Failed to load messages.'; }
