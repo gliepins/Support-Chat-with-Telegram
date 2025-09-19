@@ -58,7 +58,7 @@
     var inputWrap=el('div','scw-input'); var input=el('textarea'); input.placeholder='Type a message…'; var sendBtn=el('button','', 'Send'); inputWrap.appendChild(input); inputWrap.appendChild(sendBtn);
     panel.appendChild(head); panel.appendChild(banner); panel.appendChild(body); panel.appendChild(inputWrap); d.body.appendChild(btn); d.body.appendChild(panel);
 
-    var ws=null, connecting=false, queue=[], unread=0, reconnectAttempts=0;
+    var ws=null, connecting=false, queue=[], unread=0, reconnectAttempts=0, lastLocalEcho='';
     function showBadge(){ badge.style.display = unread>0 ? 'flex' : 'none'; badge.textContent=String(unread) }
     function continuityCheck(){var ts=parseInt(store.getItem('scw:ts')||'0',10)||0;var maxAge=30*24*60*60*1000; if(ts && (Date.now()-ts)>maxAge){ store.removeItem('scw:id'); store.removeItem('scw:token'); }}
     continuityCheck();
@@ -68,10 +68,10 @@
     function loadHistory(){ var id=store.getItem('scw:id'); if(!id) return Promise.resolve(); return fetch(origin + '/v1/conversations/' + encodeURIComponent(id) + '/messages').then(function(r){ if(!r.ok) throw new Error(); return r.json() }).then(function(msgs){ body.innerHTML=''; msgs.forEach(function(m){ addMsg(body, m.direction==='INBOUND'?'IN':'OUT', m.text, new Date(m.createdAt).getTime(), m.agent) }); }).catch(function(){ /* ignore */ }) }
 
     function connectNow(token){ if(connecting) return; connecting=true; if(ws && ws.readyState===1){connecting=false; return;} banner.style.display='block'; banner.textContent = reconnectAttempts>0? 'Reconnecting…' : 'Connecting…';
-      ws = connect(origin, token, function(dir,text,ts,agent){ if(dir==='SYS'){ addSystem(body,text,ts); return;} addMsg(body,dir,text,ts,agent); if(panel.style.display!=='flex' && dir==='OUT'){ unread++; showBadge(); } }, function(){ connecting=false; reconnectAttempts=0; banner.style.display='none'; while(queue.length){ try{ ws.send(queue.shift()) }catch(_){ } } }, function(){ connecting=false; reconnectAttempts++; banner.style.display='block'; if(reconnectAttempts>=3){ store.removeItem('scw:id'); store.removeItem('scw:token'); ensureSession(true).then(function(s){ loadHistory().then(function(){ connectNow(s.token) }) }); } else { setTimeout(function(){ ensureConn() }, 1500) } });
+      ws = connect(origin, token, function(dir,text,ts,agent){ if(dir==='SYS'){ addSystem(body,text,ts); return;} if(dir==='IN' && lastLocalEcho && text===lastLocalEcho){ lastLocalEcho=''; return;} addMsg(body,dir,text,ts,agent); if(panel.style.display!=='flex' && dir==='OUT'){ unread++; showBadge(); } }, function(){ connecting=false; reconnectAttempts=0; banner.style.display='none'; while(queue.length){ try{ ws.send(queue.shift()) }catch(_){ } } }, function(){ connecting=false; reconnectAttempts++; banner.style.display='block'; if(reconnectAttempts>=3){ store.removeItem('scw:id'); store.removeItem('scw:token'); ensureSession(true).then(function(s){ loadHistory().then(function(){ connectNow(s.token) }) }); } else { setTimeout(function(){ ensureConn() }, 1500) } });
     }
     function ensureConn(){ ensureSession(false).then(function(s){ connectNow(s.token) }) }
-    function sendText(text){ if(ws && ws.readyState===1){ try{ ws.send(text); return }catch(_){ } } queue.push(text); ensureConn(); }
+    function sendText(text){ if(ws && ws.readyState===1){ try{ ws.send(text); }catch(_){ queue.push(text); ensureConn(); } } else { queue.push(text); ensureConn(); } lastLocalEcho=text; addMsg(body,'IN',text,Date.now()); }
 
     function openPanel(){ panel.style.display='flex'; store.setItem('scw:ts', String(Date.now())); store.setItem('scw:open','1'); unread=0; showBadge(); ensureSession(false).then(function(s){ loadHistory().then(function(){ connectNow(s.token) }); }); }
     function closePanel(){ panel.style.display='none'; try{ store.removeItem('scw:open'); }catch(_){ } }
