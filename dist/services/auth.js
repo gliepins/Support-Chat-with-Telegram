@@ -31,7 +31,7 @@ function signConversationToken(conversationId, ipHash, ttlSeconds = 60 * 60) {
 function verifyConversationToken(token, ipHash) {
     const secret = getJwtSecret();
     const payload = jsonwebtoken_1.default.verify(token, secret);
-    if (!payload || typeof payload.sub !== 'string' || payload.ip !== ipHash) {
+    if (!payload || typeof payload.sub !== 'string') {
         throw new Error('Invalid token payload');
     }
     return { conversationId: payload.sub };

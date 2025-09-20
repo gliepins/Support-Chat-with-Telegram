@@ -36,6 +36,10 @@ function attachWsServer(httpServer, pathPrefix = '/v1/ws') {
             }
             const token = searchParams.get('token') || '';
             if (!token) {
+                try {
+                    logger.warn({ event: 'ws_upgrade_missing_token' });
+                }
+                catch { }
                 socket.destroy();
                 return;
             }
@@ -46,19 +50,35 @@ function attachWsServer(httpServer, pathPrefix = '/v1/ws') {
                 conversationId = (0, auth_1.verifyConversationToken)(token, ipHash).conversationId;
             }
             catch (_e) {
+                try {
+                    logger.warn({ event: 'ws_upgrade_bad_token' });
+                }
+                catch { }
                 socket.destroy();
                 return;
             }
+            try {
+                logger.info({ event: 'ws_upgrade_ok', conversationId });
+            }
+            catch { }
             wss.handleUpgrade(request, socket, head, (ws) => {
                 wss.emit('connection', ws, conversationId);
             });
         }
         catch (e) {
+            try {
+                logger.warn({ event: 'ws_upgrade_exception', err: e });
+            }
+            catch { }
             socket.destroy();
             return;
         }
     });
     wss.on('connection', (ws, conversationId) => {
+        try {
+            logger.info({ event: 'ws_connected', conversationId });
+        }
+        catch { }
         (0, hub_1.addClientToConversation)(conversationId, ws);
         ws.on('message', async (data) => {
             try {
@@ -66,7 +86,7 @@ function attachWsServer(httpServer, pathPrefix = '/v1/ws') {
                 await (0, conversationService_1.addMessage)(conversationId, 'INBOUND', text);
                 try {
                     await (0, telegramApi_1.ensureTopicForConversation)(conversationId);
-                    await (0, telegramApi_1.sendAgentMessage)(conversationId, text);
+                    await (0, telegramApi_1.sendCustomerMessage)(conversationId, text);
                 }
                 catch { }
                 // Echo to all clients in this conversation (customer can have multiple tabs)
@@ -83,6 +103,10 @@ function attachWsServer(httpServer, pathPrefix = '/v1/ws') {
         });
         ws.on('close', () => {
             (0, hub_1.removeClientFromConversation)(conversationId, ws);
+            try {
+                logger.info({ event: 'ws_closed', conversationId });
+            }
+            catch { }
         });
         try {
             ws.send(JSON.stringify({ ok: true }));

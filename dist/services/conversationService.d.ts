@@ -30,7 +30,7 @@ export declare function setNickname(conversationId: string, name: string): Promi
     createdAt: Date;
     updatedAt: Date;
 }>;
-export declare function listConversations(status?: string): Promise<{
+export declare function listConversations(status?: string, q?: string): Promise<{
     assignedAgentTgId: string | null;
     id: string;
     codename: string;
@@ -69,6 +69,7 @@ export declare function listMessagesForConversation(conversationId: string): Pro
     direction: import(".prisma/client").$Enums.MessageDirection;
     text: string;
 }[]>;
+export declare function getAssignedAgentName(conversationId: string): Promise<string | null>;
 export declare function addMessage(conversationId: string, direction: 'INBOUND' | 'OUTBOUND', text: string): Promise<{
     id: string;
     createdAt: Date;

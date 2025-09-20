@@ -1,1 +1,1 @@
-{"version":3,"file":"webhook.d.ts","sourceRoot":"","sources":["../../src/telegram/webhook.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,EAAE,MAAM,SAAS,CAAC;AAWjC,wBAAgB,cAAc,IAAI,MAAM,CAmDvC"}
+{"version":3,"file":"webhook.d.ts","sourceRoot":"","sources":["../../src/telegram/webhook.ts"],"names":[],"mappings":"AAAA,OAAO,EAAE,MAAM,EAAE,MAAM,SAAS,CAAC;AAajC,wBAAgB,cAAc,IAAI,MAAM,CA4DvC"}

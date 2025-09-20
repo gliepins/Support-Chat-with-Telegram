@@ -14,8 +14,13 @@ button{cursor:pointer}
 .table th,.table td{border-bottom:1px solid #263057;padding:8px;text-align:left}
 .badge{padding:2px 6px;border-radius:999px;border:1px solid #3b82f6;color:#93c5fd}
 #saveStatus{font:12px system-ui;color:#93c5fd}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid{display:grid;grid-template-columns:2fr 1fr;gap:16px}
 #detail{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere;background:#0b1433;border:1px solid #263057;border-radius:8px;min-height:180px;padding:10px}
+/* Row interactivity */
+.table tbody tr{transition:background .12s ease,border-color .12s ease}
+.table tbody tr:hover{background:#0f1938}
+.table tbody tr.row-selected{background:#112356;border-left:3px solid #3b82f6}
+.table tbody tr.row-selected td{border-bottom-color:#345098}
 </style>
 <header>
   <div>Support Admin</div>
@@ -64,7 +69,7 @@ button{cursor:pointer}
           <span id="bulkStatus"></span>
         </div>
         <table class="table">
-          <thead><tr><th><input type="checkbox" id="selectAll"></th><th>Codename</th><th>Name</th><th>Status</th><th>Updated</th><th>Actions</th></tr></thead>
+          <thead><tr><th><input type="checkbox" id="selectAll"></th><th>Codename</th><th>Name</th><th>Status</th><th>Agent</th><th>Updated</th><th>Actions</th></tr></thead>
           <tbody id="rows"></tbody>
         </table>
       </div>
@@ -83,6 +88,22 @@ button{cursor:pointer}
         <table class="table">
           <thead><tr><th>tgId</th><th>displayName</th><th>isActive</th><th>Actions</th></tr></thead>
           <tbody id="agentsRows"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="flex" style="justify-content:space-between">
+          <div>Messages and auto responses</div>
+          <div id="messagesStatus" style="opacity:.8"></div>
+        </div>
+        <div class="flex" style="gap:8px;margin:8px 0;align-items:flex-start">
+          <select id="closingAgent" style="min-width:220px"></select>
+          <textarea id="closingText" placeholder="Closing message" rows="3" style="min-width:360px;flex:1"></textarea>
+          <button id="saveClosing">Save</button>
+          <button id="closingBulkDelete" style="background:#dc2626;color:#fff;border:0;padding:6px 10px;border-radius:6px">Delete Selected</button>
+        </div>
+        <table class="table">
+          <thead><tr><th><input type="checkbox" id="closingSelectAll"></th><th>Agent</th><th>Closing message</th><th>Actions</th></tr></thead>
+          <tbody id="closingList"></tbody>
         </table>
       </div>
     </div>

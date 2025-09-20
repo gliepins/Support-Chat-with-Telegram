@@ -1,9 +1,12 @@
 import { MessageDirection, Prisma } from '@prisma/client';
+import pino from 'pino';
 import { getPrisma } from '../db/client';
 import { generateCodename } from './codename';
 import { ensureTopicForConversation, sendAgentMessage } from './telegramApi';
 import { broadcastToConversation } from '../ws/hub';
 import { getAgentNameByTgId } from './agentService';
+
+const logger = pino({ transport: { target: 'pino-pretty' } });
 
 export function validateCustomerName(name: string): { ok: true } | { ok: false; reason: string } {
   const trimmed = name.trim();
@@ -38,16 +41,19 @@ export async function createConversation(initialName?: string) {
   // Proactively create the Telegram topic and post welcome (if configured)
   try {
     await ensureTopicForConversation(conversation.id);
+    try { logger.info({ event: 'topic_created', conversationId: conversation.id, codename }); } catch {}
     // Also send welcome to the customer side as first OUTBOUND message
     try {
       const rows = await (prisma as any).$queryRaw`SELECT value FROM "Setting" WHERE key = 'welcome_message' LIMIT 1` as Array<{ value: string }>;
       const welcome = (rows && rows[0] && rows[0].value ? rows[0].value : '').trim();
       if (welcome) {
         const msg = await addMessage(conversation.id, 'OUTBOUND', welcome);
+        try { logger.info({ event: 'welcome_sent', conversationId: conversation.id }); } catch {}
         try { broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: msg.text, agent: 'Support' }); } catch {}
       }
-    } catch {}
-  } catch {}
+      // (Moved waiting message to after customer's first inbound message)
+    } catch (e) { try { logger.warn({ event: 'welcome_error', conversationId: conversation.id, err: e }); } catch {} }
+  } catch (e) { try { logger.warn({ event: 'topic_create_error', conversationId: conversation.id, err: e }); } catch {} }
   return conversation;
 }
 
@@ -132,8 +138,16 @@ export async function addMessage(conversationId: string, direction: 'INBOUND' | 
         throw new Error('conversation blocked');
       }
       await prisma.conversation.update({ where: { id: conversationId }, data: { status: 'OPEN_UNCLAIMED' } });
+      // Notify customer that the conversation has been reopened and is awaiting claim
+      const reopenText = 'Welcome back — we have reopened your chat and an agent will join shortly.';
+      try {
+        const reopened = await prisma.message.create({ data: { conversationId, direction: 'OUTBOUND', text: reopenText } });
+        try { broadcastToConversation(conversationId, { direction: 'OUTBOUND', text: reopened.text, agent: 'Support' }); } catch {}
+      } catch {}
     }
   }
+  // Count messages before creating new one (to detect first inbound)
+  const messagesBefore = await prisma.message.count({ where: { conversationId } });
   const msg = await prisma.message.create({
     data: {
       conversationId,
@@ -143,15 +157,28 @@ export async function addMessage(conversationId: string, direction: 'INBOUND' | 
   });
   const nowField = direction === 'INBOUND' ? { lastCustomerAt: new Date() } : { lastAgentAt: new Date() };
   await prisma.conversation.update({ where: { id: conversationId }, data: nowField });
+  // After the very first customer message, inform them we are awaiting claim
+  if (direction === 'INBOUND' && messagesBefore === 0) {
+    try {
+      const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+      if (conv && conv.assignedAgentTgId == null) {
+        const waitText = 'Thanks for your message — waiting for a support agent to join.';
+        const out = await prisma.message.create({ data: { conversationId, direction: 'OUTBOUND', text: waitText } });
+        try { broadcastToConversation(conversationId, { direction: 'OUTBOUND', text: out.text, agent: 'Support' }); } catch {}
+      }
+    } catch {}
+  }
   // If inbound from customer, ensure topic exists and fan out to Telegram later via bridging flow
   return msg;
 }
 
-export async function closeConversation(conversationId: string, actor: string) {
+export async function closeConversation(conversationId: string, actor: string, opts?: { suppressCustomerNote?: boolean }) {
   const prisma = getPrisma();
   const conv = await prisma.conversation.update({ where: { id: conversationId }, data: { status: 'CLOSED' } });
   await recordAudit(conversationId, actor, 'close', {});
-  try { broadcastToConversation(conversationId, { type: 'conversation_closed' }); } catch {}
+  if (!opts || !opts.suppressCustomerNote) {
+    try { broadcastToConversation(conversationId, { type: 'conversation_closed' }); } catch {}
+  }
   return conv;
 }
 

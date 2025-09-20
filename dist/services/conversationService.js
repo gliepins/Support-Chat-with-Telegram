@@ -1,4 +1,7 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateCustomerName = validateCustomerName;
 exports.createConversation = createConversation;
@@ -6,12 +9,18 @@ exports.setNickname = setNickname;
 exports.listConversations = listConversations;
 exports.getConversationWithMessages = getConversationWithMessages;
 exports.listMessagesForConversation = listMessagesForConversation;
+exports.getAssignedAgentName = getAssignedAgentName;
 exports.addMessage = addMessage;
 exports.closeConversation = closeConversation;
 exports.blockConversation = blockConversation;
 exports.recordAudit = recordAudit;
+const pino_1 = __importDefault(require("pino"));
 const client_1 = require("../db/client");
 const codename_1 = require("./codename");
+const telegramApi_1 = require("./telegramApi");
+const hub_1 = require("../ws/hub");
+const agentService_1 = require("./agentService");
+const logger = (0, pino_1.default)({ transport: { target: 'pino-pretty' } });
 function validateCustomerName(name) {
     const trimmed = name.trim();
     if (trimmed.length < 2 || trimmed.length > 32) {
@@ -41,6 +50,42 @@ async function createConversation(initialName) {
                 : {}),
         },
     });
+    // Proactively create the Telegram topic and post welcome (if configured)
+    try {
+        await (0, telegramApi_1.ensureTopicForConversation)(conversation.id);
+        try {
+            logger.info({ event: 'topic_created', conversationId: conversation.id, codename });
+        }
+        catch { }
+        // Also send welcome to the customer side as first OUTBOUND message
+        try {
+            const rows = await prisma.$queryRaw `SELECT value FROM "Setting" WHERE key = 'welcome_message' LIMIT 1`;
+            const welcome = (rows && rows[0] && rows[0].value ? rows[0].value : '').trim();
+            if (welcome) {
+                const msg = await addMessage(conversation.id, 'OUTBOUND', welcome);
+                try {
+                    logger.info({ event: 'welcome_sent', conversationId: conversation.id });
+                }
+                catch { }
+                try {
+                    (0, hub_1.broadcastToConversation)(conversation.id, { direction: 'OUTBOUND', text: msg.text, agent: 'Support' });
+                }
+                catch { }
+            }
+        }
+        catch (e) {
+            try {
+                logger.warn({ event: 'welcome_error', conversationId: conversation.id, err: e });
+            }
+            catch { }
+        }
+    }
+    catch (e) {
+        try {
+            logger.warn({ event: 'topic_create_error', conversationId: conversation.id, err: e });
+        }
+        catch { }
+    }
     return conversation;
 }
 async function setNickname(conversationId, name) {
@@ -56,7 +101,7 @@ async function setNickname(conversationId, name) {
     await recordAudit(conversationId, 'system', 'set_nickname', { length: name.trim().length });
     return conversation;
 }
-async function listConversations(status) {
+async function listConversations(status, q) {
     const prisma = (0, client_1.getPrisma)();
     let where = {};
     if (status) {
@@ -72,6 +117,13 @@ async function listConversations(status) {
         else if (status.toLowerCase() === 'all') {
             where = {};
         }
+    }
+    if (q && q.trim().length > 0) {
+        const term = q.trim();
+        where.AND = (where.AND || []).concat([{ OR: [
+                    { codename: { contains: term, mode: 'insensitive' } },
+                    { customerName: { contains: term, mode: 'insensitive' } },
+                ] }]);
     }
     const list = await prisma.conversation.findMany({ where, orderBy: { updatedAt: 'desc' } });
     // Ensure JSON-safe (BigInt -> string)
@@ -94,6 +146,18 @@ async function listMessagesForConversation(conversationId) {
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true, direction: true, text: true },
     });
+}
+async function getAssignedAgentName(conversationId) {
+    const prisma = (0, client_1.getPrisma)();
+    const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+    if (!conv || conv.assignedAgentTgId == null)
+        return null;
+    try {
+        return await (0, agentService_1.getAgentNameByTgId)(conv.assignedAgentTgId);
+    }
+    catch {
+        return null;
+    }
 }
 async function addMessage(conversationId, direction, text) {
     const prisma = (0, client_1.getPrisma)();
@@ -127,6 +191,10 @@ async function closeConversation(conversationId, actor) {
     const prisma = (0, client_1.getPrisma)();
     const conv = await prisma.conversation.update({ where: { id: conversationId }, data: { status: 'CLOSED' } });
     await recordAudit(conversationId, actor, 'close', {});
+    try {
+        (0, hub_1.broadcastToConversation)(conversationId, { type: 'conversation_closed' });
+    }
+    catch { }
     return conv;
 }
 async function blockConversation(conversationId, actor) {

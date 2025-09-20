@@ -52,7 +52,7 @@
     var btn=el('div','scw-btn','Chat'); var badge=el('div','scw-badge','0'); btn.style.position='fixed'; btn.style.bottom='16px'; var pos=(opts.position||'right')==='left'?'left':'right'; btn.style[pos]='16px'; btn.style[('right'===pos?'left':'right')]='auto'; btn.appendChild(badge);
 
     var panel=el('div','scw-panel'); panel.style[pos]='16px'; panel.style[('right'===pos?'left':'right')]='auto';
-    var head=el('div','scw-head'); var title=el('div','', 'Support'); var actions=el('div','scw-actions'); var edit=el('div','scw-edit','✎'); var close=el('div','', '×'); actions.appendChild(edit); actions.appendChild(close); head.appendChild(title); head.appendChild(actions);
+    var head=el('div','scw-head'); var title=el('div','', 'Support'); var actions=el('div','scw-actions'); var edit=el('div','scw-edit','✎'); var minimize=el('div','scw-edit','_'); var clearBtn=el('div','scw-edit','×'); actions.appendChild(edit); actions.appendChild(minimize); actions.appendChild(clearBtn); head.appendChild(title); head.appendChild(actions);
     var banner=el('div','scw-banner','Reconnecting…');
     var body=el('div','scw-body');
     var inputWrap=el('div','scw-input'); var input=el('textarea'); input.placeholder='Type a message…'; var sendBtn=el('button','', 'Send'); inputWrap.appendChild(input); inputWrap.appendChild(sendBtn);
@@ -75,8 +75,11 @@
     function sendText(text){ if(ws && ws.readyState===1){ try{ ws.send(text); }catch(_){ queue.push(text); ensureConn(); } } else { queue.push(text); ensureConn(); } lastLocalEcho=text; addMsg(body,'IN',text,Date.now()); }
 
     function openPanel(){ panel.style.display='flex'; store.setItem('scw:ts', String(Date.now())); store.setItem('scw:open','1'); unread=0; showBadge(); ensureSession(false).then(function(s){ loadHistory().then(function(){ connectNow(s.token) }); }); }
-    function closePanel(){ panel.style.display='none'; try{ store.removeItem('scw:open'); }catch(_){ } }
-    btn.onclick=function(){panel.style.display==='flex'?closePanel():openPanel()}; close.onclick=closePanel;
+    function minimizePanel(){ panel.style.display='none'; try{ store.removeItem('scw:open'); }catch(_){ } }
+    function clearSessionAndReset(){ try{ store.removeItem('scw:id'); store.removeItem('scw:token'); store.removeItem('scw:name'); store.removeItem('scw:draft'); setCookie('scw_id','',-1); setCookie('scw_token','',-1);}catch(_){ } body.innerHTML=''; title.textContent='Support'; unread=0; showBadge(); }
+    btn.onclick=function(){ panel.style.display==='flex'?minimizePanel():openPanel() };
+    minimize.onclick=minimizePanel;
+    clearBtn.onclick=function(){ if(panel.style.display==='none'){ clearSessionAndReset(); } else { if(confirm('Clear chat history and start new?')){ clearSessionAndReset(); minimizePanel(); } } };
 
     var editing=false; edit.onclick=function(){ if(editing) return; editing=true; ensureSession(false).then(function(s){ var current=store.getItem('scw:name')||''; var wrap=el('div','scw-name-edit'); var inp=el('input'); inp.value=current; inp.placeholder='Your name'; var save=el('button','scw-name-btn','Save'); var cancel=el('button','scw-name-btn scw-name-cancel','Cancel'); wrap.appendChild(inp); wrap.appendChild(save); wrap.appendChild(cancel); head.insertBefore(wrap, actions); function done(){ try{ head.removeChild(wrap); }catch(_){ } editing=false; } cancel.onclick=done; save.onclick=function(){ var name=inp.value.trim(); if(!name){ done(); return; } patchName(origin, store.getItem('scw:id'), (store.getItem('scw:token')||''), name).then(function(){ store.setItem('scw:name',name); updateTitle(); done(); }).catch(function(){ alert('Could not update name right now. Please try later.'); done(); }); }; inp.addEventListener('keydown',function(e){ if(e.key==='Enter') save.onclick(); if(e.key==='Escape') cancel.onclick(); }); setTimeout(function(){ try{ inp.focus(); inp.select(); }catch(_){ } }, 0); }); };
 

@@ -5,12 +5,15 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ensureTopicForConversation = ensureTopicForConversation;
 exports.sendAgentMessage = sendAgentMessage;
+exports.sendCustomerMessage = sendCustomerMessage;
 exports.updateTopicTitleFromConversation = updateTopicTitleFromConversation;
 exports.closeTopic = closeTopic;
+exports.deleteTopicByThreadId = deleteTopicByThreadId;
 exports.sendTopicMessage = sendTopicMessage;
 exports.pinTopicMessage = pinTopicMessage;
 exports.sendTopicControls = sendTopicControls;
 exports.answerCallback = answerCallback;
+exports.sendGroupMessage = sendGroupMessage;
 const pino_1 = __importDefault(require("pino"));
 const client_1 = require("../db/client");
 const logger = (0, pino_1.default)({ transport: { target: 'pino-pretty' } });
@@ -62,6 +65,19 @@ async function sendAgentMessage(conversationId, text) {
         throw new Error('thread id missing');
     await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text });
 }
+async function sendCustomerMessage(conversationId, text) {
+    const prisma = (0, client_1.getPrisma)();
+    const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+    if (!conv || !conv.threadId) {
+        await ensureTopicForConversation(conversationId);
+    }
+    const chatId = process.env.SUPPORT_GROUP_ID;
+    const updated = await prisma.conversation.findUnique({ where: { id: conversationId } });
+    if (!updated?.threadId)
+        throw new Error('thread id missing');
+    const display = updated.customerName && updated.customerName.trim().length > 0 ? updated.customerName.trim() : updated.codename;
+    await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text: `${display}: ${text}` });
+}
 async function updateTopicTitleFromConversation(conversationId) {
     const prisma = (0, client_1.getPrisma)();
     const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
@@ -85,6 +101,12 @@ async function closeTopic(conversationId) {
     if (!chatId)
         throw new Error('SUPPORT_GROUP_ID not set');
     await tgFetch('closeForumTopic', { chat_id: chatId, message_thread_id: threadId });
+}
+async function deleteTopicByThreadId(threadId) {
+    const chatId = process.env.SUPPORT_GROUP_ID;
+    if (!chatId)
+        throw new Error('SUPPORT_GROUP_ID not set');
+    await tgFetch('deleteForumTopic', { chat_id: chatId, message_thread_id: threadId });
 }
 async function sendTopicMessage(conversationId, text) {
     const prisma = (0, client_1.getPrisma)();
@@ -119,5 +141,14 @@ async function sendTopicControls(conversationId) {
 }
 async function answerCallback(callbackQueryId, text) {
     await tgFetch('answerCallbackQuery', { callback_query_id: callbackQueryId, text: text ?? '' });
+}
+async function sendGroupMessage(text, threadId) {
+    const chatId = process.env.SUPPORT_GROUP_ID;
+    if (!chatId)
+        throw new Error('SUPPORT_GROUP_ID not set');
+    const body = { chat_id: chatId, text };
+    if (typeof threadId === 'number')
+        body.message_thread_id = threadId;
+    await tgFetch('sendMessage', body);
 }
 //# sourceMappingURL=telegramApi.js.map

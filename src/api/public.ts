@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import pino from 'pino';
 import { hashIp, signConversationToken } from '../services/auth';
 import { createConversation, setNickname, listMessagesForConversation, getAssignedAgentName } from '../services/conversationService';
 import { getPrisma } from '../db/client';
@@ -7,6 +8,7 @@ import { requireConversationAuth } from '../middleware/conversationAuth';
 import { ipRateLimit, keyRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
+const logger = pino({ transport: { target: 'pino-pretty' } });
 
 router.post('/v1/conversations/start', ipRateLimit(20, 60), async (req, res) => {
   try {
@@ -14,8 +16,10 @@ router.post('/v1/conversations/start', ipRateLimit(20, 60), async (req, res) => 
     const conversation = await createConversation(name);
     const ipHash = hashIp((req.ip || '').toString());
     const token = signConversationToken(conversation.id, ipHash);
+    try { logger.info({ event: 'conversation_start', conversationId: conversation.id, codename: conversation.codename }); } catch {}
     return res.json({ conversation_id: conversation.id, token, codename: conversation.codename });
   } catch (e: any) {
+    try { logger.warn({ event: 'conversation_start_error', err: e }); } catch {}
     return res.status(400).json({ error: e?.message || 'bad request' });
   }
 });

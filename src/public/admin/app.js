@@ -43,12 +43,19 @@
     Array.from(rows.querySelectorAll('tr[data-id]')).forEach((tr) => {
       tr.onclick = async () => {
         const id = tr.getAttribute('data-id'); if(!id) return;
+        // Visual selection & persistence
+        try{ Array.from(rows.querySelectorAll('tr[data-id]')).forEach(x=>x.classList.remove('row-selected')); }catch(_){ }
+        tr.classList.add('row-selected');
+        try{ localStorage.setItem('admin:selected', id); }catch(_){ }
         detail.textContent = 'Loading…'; detailTitle.textContent = id;
         try {
           const payload = await fetchJSON(origin + '/v1/conversations/' + encodeURIComponent(id) + '/messages');
           const msgs = Array.isArray(payload) ? payload : (payload && payload.messages ? payload.messages : []);
           if (!Array.isArray(msgs) || msgs.length === 0) { detail.textContent = 'No messages.'; return; }
-          detail.textContent = msgs.map(m => `${new Date(m.createdAt).toLocaleString()}  ${m.direction}: ${m.text}`).join('\n');
+          detail.textContent = msgs.map(m => {
+            const who = m.direction === 'OUTBOUND' ? (m.agent || 'Support') : 'Customer';
+            return `${new Date(m.createdAt).toLocaleString()}  ${who}: ${m.text}`;
+          }).join('\n');
         } catch { detail.textContent = 'Failed to load messages.'; }
       };
     });
@@ -70,7 +77,8 @@
         const tr = document.createElement('tr'); tr.setAttribute('data-id', c.id);
         const cb = `<input type=\"checkbox\" class=\"rowSel\" data-id=\"${c.id}\">`;
         const updated = c.updatedAt ? new Date(c.updatedAt).toLocaleString() : '';
-        tr.innerHTML = `<td>${cb}</td><td>${c.codename}</td><td>${c.customerName||''}</td><td><span class=\"badge\">${c.status}</span></td><td>${updated}</td>`;
+        const agent = c.assignedAgentName || (c.assignedAgentTgId ? String(c.assignedAgentTgId) : '');
+        tr.innerHTML = `<td>${cb}</td><td>${c.codename}</td><td>${c.customerName||''}</td><td><span class=\"badge\">${c.status}</span></td><td>${agent}</td><td>${updated}</td>`;
         const td = document.createElement('td');
         const btnClose = document.createElement('button'); btnClose.textContent='Close'; btnClose.onclick = async (e)=>{ e.stopPropagation(); try{ await postJSON(origin + '/v1/moderation/close', { id: c.id }); loadConversations(); }catch{ alert('Close failed'); } };
         const btnBlock = document.createElement('button'); btnBlock.textContent='Block'; btnBlock.style.marginLeft='6px'; btnBlock.onclick = async (e)=>{ e.stopPropagation(); try{ await postJSON(origin + '/v1/moderation/block', { id: c.id }); loadConversations(); }catch{ alert('Block failed'); } };
@@ -79,6 +87,11 @@
         td.append(btnClose, btnBlock, aCsv); tr.appendChild(td); rows.appendChild(tr);
       }
       bindRowClicks();
+      // Restore last selection if present
+      try{
+        const sel = localStorage.getItem('admin:selected');
+        if(sel){ const tr = rows.querySelector(`tr[data-id="${sel}"]`); if(tr){ tr.classList.add('row-selected'); tr.scrollIntoView({ block: 'nearest' }); } }
+      }catch(_){ }
     } catch (e) {
       const tr = document.createElement('tr'); const td = document.createElement('td'); td.colSpan = 5; td.textContent = 'Failed to load. Check token and try again.'; tr.appendChild(td); rows.appendChild(tr);
     }
@@ -92,7 +105,8 @@
   deleteSelected.onclick = async () => {
     const ids = Array.from(rows.querySelectorAll('.rowSel')).filter((c)=>c.checked).map((c)=>c.getAttribute('data-id')).filter(Boolean);
     if (!ids.length) { bulkStatus.textContent = 'No rows selected'; setTimeout(()=>bulkStatus.textContent='',1200); return; }
-    if (!confirm('Delete '+ids.length+' selected conversation(s)?')) return;
+    // inline confirm: turn the button into Confirm state briefly
+    if (!deleteSelected.dataset.step) { deleteSelected.dataset.step='confirm'; deleteSelected.textContent='Confirm Delete'; deleteSelected.style.background='#b91c1c'; setTimeout(()=>{ deleteSelected.dataset.step=''; deleteSelected.textContent='Delete Selected'; deleteSelected.style.background='#dc2626'; }, 3000); return; }
     try {
       const r = await fetch(origin + '/v1/admin/conversations/bulk-delete', { method: 'POST', headers: Object.assign({'content-type':'application/json'}, authHeaders()), body: JSON.stringify({ ids }) });
       const json = await r.json().catch(()=>({}));
@@ -135,6 +149,58 @@
   };
   agentsReload.onclick = loadAgents;
 
+  // Messages & auto responses
+  const closingAgent = document.getElementById('closingAgent');
+  const closingText = document.getElementById('closingText');
+  const saveClosing = document.getElementById('saveClosing');
+  const closingBulkDelete = document.getElementById('closingBulkDelete');
+  const closingSelectAll = document.getElementById('closingSelectAll');
+  const messagesStatus = document.getElementById('messagesStatus');
+  const closingList = document.getElementById('closingList');
+  function setMessagesStatus(msg){ messagesStatus.textContent = msg; setTimeout(()=>{ messagesStatus.textContent=''; }, 1500) }
+
+  async function populateClosingAgents(){
+    try{
+      const list = await fetchJSON(origin + '/v1/admin/agents');
+      closingAgent.innerHTML = '';
+      closingList.innerHTML = '';
+      for(const a of list){
+        const opt = document.createElement('option');
+        opt.value = a.tgId; opt.textContent = `${a.displayName} (${a.tgId})`;
+        closingAgent.appendChild(opt);
+        const tr=document.createElement('tr');
+        const msg = (a.closingMessage||'').toString();
+        tr.innerHTML = `<td><input type=\"checkbox\" class=\"closingSel\" data-id=\"${a.tgId}\"></td><td>${a.displayName} (${a.tgId})</td><td>${msg?msg:'—'}</td>`;
+        const td = document.createElement('td');
+        const edit = document.createElement('button'); edit.textContent='Edit'; edit.onclick=()=>{ closingAgent.value = a.tgId; closingText.value = msg; };
+        const del = document.createElement('button'); del.textContent='Delete'; del.style.marginLeft='6px'; del.onclick=async()=>{
+          // inline confirmation
+          if(!del.dataset.step){ del.dataset.step='confirm'; del.textContent='Confirm'; del.style.background='#dc2626'; del.style.color='#fff'; setTimeout(()=>{ del.dataset.step=''; del.textContent='Delete'; del.style=''; }, 3000); return; }
+          try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: '' }); populateClosingAgents(); }catch{}
+        };
+        td.append(edit, del); tr.appendChild(td);
+        closingList.appendChild(tr);
+      }
+    }catch{}
+  }
+  saveClosing.onclick = async ()=>{
+    const tgId = closingAgent.value; const msg = (closingText.value||'').trim(); if(!tgId){ setMessagesStatus('Select agent'); return; }
+    try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId, message: msg }); setMessagesStatus('Saved'); closingText.value=''; populateClosingAgents(); }
+    catch{ setMessagesStatus('Failed'); }
+  };
+  closingSelectAll.onclick = () => { const checked = closingSelectAll.checked; closingList.querySelectorAll('.closingSel').forEach(c=>{ c.checked = checked; }); };
+  closingBulkDelete.onclick = async ()=>{
+    const ids = Array.from(closingList.querySelectorAll('.closingSel')).filter(c=>c.checked).map(c=>c.getAttribute('data-id')).filter(Boolean);
+    if (!ids.length){ setMessagesStatus('No selections'); return; }
+    // inline confirm on the bulk button
+    if(!closingBulkDelete.dataset.step){ closingBulkDelete.dataset.step='confirm'; closingBulkDelete.textContent='Confirm Delete'; setTimeout(()=>{ closingBulkDelete.dataset.step=''; closingBulkDelete.textContent='Delete Selected'; }, 3000); return; }
+    try{
+      for(const id of ids){ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: id, message: '' }); }
+      closingBulkDelete.dataset.step=''; closingBulkDelete.textContent='Delete Selected';
+      populateClosingAgents(); setMessagesStatus('Deleted');
+    }catch{ setMessagesStatus('Failed'); }
+  };
+
   statusSel.onchange = loadConversations;
   // debounce dynamic search (3+ chars)
   let searchTimer = null; searchInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer = setTimeout(()=>{ const q=(searchInput.value||'').trim(); if(q.length===0 || q.length>=3){ loadConversations(); } }, 250); });
@@ -147,5 +213,5 @@
     }
   };
 
-  (function init(){ tokenInput.value = getToken(); statusSel.value='all'; refreshMetricsBtn.click(); loadSettings(); loadConversations(); loadAgents(); })();
+  (function init(){ tokenInput.value = getToken(); statusSel.value='all'; refreshMetricsBtn.click(); loadSettings(); loadConversations(); loadAgents(); populateClosingAgents(); })();
 })();

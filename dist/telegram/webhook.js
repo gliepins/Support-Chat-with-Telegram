@@ -8,7 +8,9 @@ const express_1 = require("express");
 const pino_1 = __importDefault(require("pino"));
 const bot_1 = require("./bot");
 const telegramApi_1 = require("../services/telegramApi");
+const hub_1 = require("../ws/hub");
 const client_1 = require("../db/client");
+const agentService_1 = require("../services/agentService");
 const conversationService_1 = require("../services/conversationService");
 const logger = (0, pino_1.default)({ transport: { target: 'pino-pretty' } });
 // Minimal skeleton: verify secret in path and optional header; log updates for now
@@ -21,7 +23,7 @@ function telegramRouter() {
             const provided = req.header('x-telegram-bot-api-secret-token');
             if (provided !== configuredHeaderSecret) {
                 logger.warn({ hasHeader: Boolean(provided) }, 'telegram header secret mismatch');
-                // temporarily accept updates to continue integration
+                return res.status(401).json({ ok: false });
             }
         }
         const update = req.body;
@@ -46,6 +48,19 @@ function telegramRouter() {
                             catch { }
                             try {
                                 await (0, telegramApi_1.sendAgentMessage)(conversationId, `Claimed by @${cb.from?.username ?? tgId}`);
+                            }
+                            catch { }
+                            // Announce agent joining with display name if available
+                            try {
+                                const tgIdStr = cb.from?.id ? String(cb.from.id) : '';
+                                let label = null;
+                                if (tgIdStr) {
+                                    try {
+                                        label = await (0, agentService_1.getAgentNameByTgId)(BigInt(tgIdStr));
+                                    }
+                                    catch { }
+                                }
+                                (0, hub_1.broadcastToConversation)(conversationId, { type: 'agent_joined', agent: label || 'Support' });
                             }
                             catch { }
                         }

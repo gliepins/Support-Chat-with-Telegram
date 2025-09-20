@@ -38,6 +38,7 @@ export function attachWsServer(httpServer: Server, pathPrefix = '/v1/ws') {
       }
       const token = searchParams.get('token') || '';
       if (!token) {
+        try { logger.warn({ event: 'ws_upgrade_missing_token' }); } catch {}
         socket.destroy();
         return;
       }
@@ -47,19 +48,23 @@ export function attachWsServer(httpServer: Server, pathPrefix = '/v1/ws') {
       try {
         conversationId = verifyConversationToken(token, ipHash).conversationId;
       } catch (_e) {
+        try { logger.warn({ event: 'ws_upgrade_bad_token' }); } catch {}
         socket.destroy();
         return;
       }
+      try { logger.info({ event: 'ws_upgrade_ok', conversationId }); } catch {}
       wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, conversationId);
       });
     } catch (e) {
+      try { logger.warn({ event: 'ws_upgrade_exception', err: e }); } catch {}
       socket.destroy();
       return;
     }
   });
 
   wss.on('connection', (ws: WebSocket, conversationId: string) => {
+    try { logger.info({ event: 'ws_connected', conversationId }); } catch {}
     addClientToConversation(conversationId, ws);
 
     ws.on('message', async (data: RawData) => {
@@ -81,6 +86,7 @@ export function attachWsServer(httpServer: Server, pathPrefix = '/v1/ws') {
 
     ws.on('close', () => {
       removeClientFromConversation(conversationId, ws);
+      try { logger.info({ event: 'ws_closed', conversationId }); } catch {}
     });
 
     try { ws.send(JSON.stringify({ ok: true })); } catch {}

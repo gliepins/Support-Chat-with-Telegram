@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import pino from 'pino';
 import { handleTelegramUpdate } from './bot';
-import { answerCallback, closeTopic, sendAgentMessage, updateTopicTitleFromConversation } from '../services/telegramApi';
+import { answerCallback, closeTopic, sendAgentMessage, updateTopicTitleFromConversation, sendGroupMessage } from '../services/telegramApi';
 import { broadcastToConversation } from '../ws/hub';
 import { getPrisma } from '../db/client';
 import { getAgentNameByTgId } from '../services/agentService';
@@ -26,6 +26,34 @@ export function telegramRouter(): Router {
     }
     const update = req.body as any;
     logger.info({ update }, 'telegram update');
+
+    // Fallback: intercept /help at webhook level to avoid forwarding to customer
+    try {
+      const msg = update && update.message;
+      const text: string | undefined = msg && (msg.text || msg.caption);
+      if (text && typeof text === 'string' && /^\/help\b/i.test(text.trim())) {
+        const threadId: number | undefined = msg.message_thread_id as number | undefined;
+        const help = [
+          'Commands:',
+          '/claim — assign conversation to yourself',
+          '/close — close the conversation',
+          '/note <text> — set private note',
+          '/codename <text> — set codename',
+          '/myname or /whoami — your agent display name',
+          '/myid — your Telegram id',
+        ].join('\n');
+        if (threadId) {
+          try {
+            const prisma = getPrisma();
+            const conv = await prisma.conversation.findFirst({ where: { threadId } });
+            if (conv) { await sendAgentMessage(conv.id, help); }
+          } catch {}
+        } else {
+          try { await sendGroupMessage(help); } catch {}
+        }
+        return res.json({ ok: true });
+      }
+    } catch {}
 
     // Handle inline button callbacks
     if (update && update.callback_query) {
@@ -55,9 +83,23 @@ export function telegramRouter(): Router {
             }
           } else if (action === 'close') {
             const tgId: number | undefined = cb.from?.id;
-            await closeConversation(conversationId, `telegram:${tgId ?? 'unknown'}`);
-            try { await closeTopic(conversationId); } catch {}
-            try { await sendAgentMessage(conversationId, `Closed by @${cb.from?.username ?? tgId}`); } catch {}
+            await closeConversation(conversationId, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
+            try {
+              const prisma = getPrisma();
+              const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
+              const closing = agent && agent.isActive && agent.closingMessage ? agent.closingMessage : 'Conversation closed. You can write to reopen.';
+              // First persist to transcript and broadcast to customer
+              try {
+                const { addMessage, getAssignedAgentName } = await import('../services/conversationService');
+                const msgRow = await addMessage(conversationId, 'OUTBOUND', closing);
+                let label: string | null = null; try { label = await getAssignedAgentName(conversationId); } catch {}
+                broadcastToConversation(conversationId, { direction: 'OUTBOUND', text: msgRow.text, agent: label || 'Support' });
+                try { broadcastToConversation(conversationId, { type: 'conversation_closed' }); } catch {}
+              } catch {}
+              // Then notify Telegram topic and close it
+              try { await sendAgentMessage(conversationId, closing); } catch {}
+              try { await closeTopic(conversationId); } catch {}
+            } catch {}
           }
         }
       } catch (e) {

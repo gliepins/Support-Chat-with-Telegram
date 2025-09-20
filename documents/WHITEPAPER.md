@@ -61,6 +61,9 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - After agent reply: if customer silent N hours → auto‑close; any new message reopens.
 - Reopen: customer message on closed thread → reopen + edit topic title (latest nickname + codename).
 - States tracked: OPEN_UNCLAIMED, OPEN_ASSIGNED, AWAITING_CUSTOMER, CLOSED, BLOCKED.
+  - First inbound (unclaimed): after the customer’s first message, send an OUTBOUND note to the customer — “Thanks for your message — waiting for a support agent to join.”
+  - Reopen UX: if a customer writes into a closed chat, immediately reopen to OPEN_UNCLAIMED and send “Welcome back — we have reopened your chat and an agent will join shortly.”
+  - Close UX: on close (via `/close` or inline Close), persist the agent’s configured closing message first to the customer transcript and broadcast a `conversation_closed` event to update the widget instantly; then post the same message into the Telegram topic and close it.
 
 ## 5. Nickname and Agent‑Only Notes
 
@@ -116,7 +119,7 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
 - **Telegram webhook**
   - POST `/v1/telegram/webhook/<secret>` — receives Updates; only handles messages in SUPPORT_GROUP_ID; routes by `message_thread_id`.
   - Inline buttons in Topics provide Claim/Close actions; `/note` supported for private notes.
-  - Commands for agents: `/claim`, `/close`, `/note`, `/myname`|`/whoami` (show assigned display name), `/myid`.
+  - Commands for agents: `/help`, `/claim`, `/close`, `/note`, `/myname`|`/whoami` (show assigned display name), `/myid`.
   - Requires claim before outbound messages are bridged to customer.
 
 OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
@@ -128,7 +131,7 @@ OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 - Posting: bridge uses `sendMessage(chat_id, text, { message_thread_id })`.
 - Editing title: `editForumTopic` when nickname or badges change.
 - Closing: `closeForumTopic` when conversation closes.
-- Commands/buttons: `/note`, Claim/Close via inline keyboards + `answerCallbackQuery`. (Rename via API.)
+- Commands/buttons: `/help`, `/note`, Claim/Close via inline keyboards + `answerCallbackQuery`. (Rename via API.)
   - Agent identity: Admin sets display names tied to Telegram ids; widget shows "[agent] said:" and “joined” bubbles.
   - Topic lifecycle: topics are created on conversation start; on admin bulk delete by ids, corresponding topics are deleted.
 
@@ -212,10 +215,9 @@ Additional runtime counters to consider: bridge failures, webhook auth failures,
   - Rate limits and blocklist work.
 
 ---
-Last updated: 2025-09-19 (EOD)
+Last updated: 2025-09-20
 
 Today’s highlights:
-- Admin: agents tab (enable/disable, closing message), bulk delete deletes Telegram topics, metrics auto-refresh, conversations list polish, detail view fixed.
-- Widget: multiline input, draft persistence, panel auto-open, agent labels, join bubble with display name, closed-state notices, stronger session continuity (cookie fallback, auto-refresh session after WS failures), welcome shown only to customers.
-- Bot/Service: require claim before reply; notify on closed; /codename; immediate topic creation on start.
-- Settings: welcome_message stored server-side and applied on new conversation.
+- Admin: Agent column by display name; strong row selection styling; new “Messages and auto responses” card to set agent closing messages (edit, inline delete confirm, bulk delete with inline confirm); Admin Close now persists the closing message to the customer first, then closes the Telegram topic; conversations bulk delete now uses inline confirmation.
+- Widget: immediate closed-state via live `conversation_closed` event; after first customer message when unclaimed, show “waiting for an agent”; on writing into a closed chat, show “reopened, agent will join shortly”.
+- Bot/Service: `/help` implemented; inline Close action parity with `/close` (customer closing message persisted first); deep health check endpoint for start→topic→welcome→WS; settings upsert via Prisma; robustness fixes and better lifecycle logging.
