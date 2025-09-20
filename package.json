@@ -4,14 +4,17 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon --watch src --ext ts,tsx,json --exec \"node -r ts-node/register src/index.ts\"",
-    "build": "tsc -p .",
-    "start": "node dist/index.js"
+    "build": "tsc -p . && npm run build:widget",
+    "build:widget": "esbuild src/public/widget.js --bundle --minify --target=es2018 --legal-comments=none --outfile=dist/public/widget.min.js",
+    "start": "node dist/index.js",
+    "release:widget": "node scripts/releaseWidget.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "devDependencies": {
+    "esbuild": "^0.23.0",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/json2csv": "^5.0.7",

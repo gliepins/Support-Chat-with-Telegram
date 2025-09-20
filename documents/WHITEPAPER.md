@@ -46,6 +46,10 @@ This whitepaper documents the design, security posture, operational model, and r
 - **Agent**
   - tgId (Telegram user id, bigint), displayName, isActive, timestamps
 
+- **MessageTemplate** (system messages configuration)
+  - key (id), enabled, text
+  - toCustomerWs (WS banner), toCustomerPersist (persisted OUTBOUND bubble), toTelegram, pinInTopic, rateLimitPerConvSec?, locale, timestamps
+
 The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sqlserver/sqlite with minimal type adjustments later.
 
 ## 4. Conversation Lifecycle and Timers
@@ -61,7 +65,7 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - After agent reply: if customer silent N hours → auto‑close; any new message reopens.
 - Reopen: customer message on closed thread → reopen + edit topic title (latest nickname + codename).
 - States tracked: OPEN_UNCLAIMED, OPEN_ASSIGNED, AWAITING_CUSTOMER, CLOSED, BLOCKED.
-  - First inbound (unclaimed): after the customer’s first message, send an OUTBOUND note to the customer — “Thanks for your message — waiting for a support agent to join.”
+  - Waiting note while unclaimed: after any customer message while the conversation is unclaimed, emit `waiting_for_agent` via the centralized system messaging service according to the template flags (WS banner and/or persisted OUTBOUND). Rate‑limited per template.
   - Reopen UX: if a customer writes into a closed chat, immediately reopen to OPEN_UNCLAIMED and send “Welcome back — we have reopened your chat and an agent will join shortly.”
   - Close UX: on close (via `/close` or inline Close), persist the agent’s configured closing message first to the customer transcript and broadcast a `conversation_closed` event to update the widget instantly; then post the same message into the Telegram topic and close it.
 
@@ -114,6 +118,8 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - POST `/v1/admin/agents/disable` — disable agent
   - POST `/v1/admin/agents/enable` — enable agent
   - POST `/v1/admin/agents/closing-message` — set agent closing message
+  - GET `/v1/admin/message-templates` — list system message templates
+  - POST `/v1/admin/message-templates/upsert` — upsert a template (text + delivery flags + rate)
   - POST `/v1/admin/conversations/bulk-delete` — delete by ids or by status filter
   - GET `/v1/admin/settings` / POST `/v1/admin/settings` — e.g., `welcome_message`
 - **Telegram webhook**
@@ -121,6 +127,9 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - Inline buttons in Topics provide Claim/Close actions; `/note` supported for private notes.
   - Commands for agents: `/help`, `/claim`, `/close`, `/note`, `/myname`|`/whoami` (show assigned display name), `/myid`.
   - Requires claim before outbound messages are bridged to customer.
+
+Notes:
+- Public Messages endpoint `GET /v1/conversations/:id/messages` now also returns `closed_note` (string | undefined) for rendering a banner on history restore when status=CLOSED (driven by the `closed_history_note` template).
 
 OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 
@@ -134,6 +143,7 @@ OpenAPI 3.1 spec will live in `docs/openapi.yaml` (roadmap).
 - Commands/buttons: `/help`, `/note`, Claim/Close via inline keyboards + `answerCallbackQuery`. (Rename via API.)
   - Agent identity: Admin sets display names tied to Telegram ids; widget shows "[agent] said:" and “joined” bubbles.
   - Topic lifecycle: topics are created on conversation start; on admin bulk delete by ids, corresponding topics are deleted.
+  - Notifications: all Telegram posts are sent with `disable_notification=true` (silent); audible notifications are only on the customer widget side per widget settings.
 
 ## 9. Nginx and Systemd Integration (example)
 
@@ -180,6 +190,11 @@ Additional runtime counters to consider: bridge failures, webhook auth failures,
 
 - **Completed (Pilot)**
   - REST/WS bridge; widget with reconnect/history; nickname; agent notes; reminders + 5m auto‑close; rate limits; admin UI with search/export and bulk delete; agents directory with display names; strict webhook header; claim‑before‑reply.
+  - Centralized System Messages: Prisma `MessageTemplate`; `emitServiceMessage()` with delivery flags (WS banner, persist bubble, Telegram, optional pin) and per‑conversation rate limit.
+  - Templates wired: `welcome_message`, `waiting_for_agent`, `conversation_reopened`, `unclaimed_reminder_5m`, `unclaimed_reminder_15m_pin`, `closed_history_note`.
+  - Admin: new “System messages” table with inline edit of text and flags (WS/Persist/Telegram/Pin/Rate).
+  - Widget: offline banner + retry; sound/vibration toggles with persistent prefs and configurable volume; info_note banner rendering; removed fake typing indicator; removed hardcoded “conversation closed” banner (only the persisted closing message remains); versioned/minified build and cache‑busting via `?v=`.
+  - Server: always silent Telegram notifications; versioned widget serving (minified if present) with long cache and immutable caching when `?v=` is used.
 - **Next (Short term)**
   - Admin: pagination, unread indicators, per‑conversation reopen/close metrics; stricter SERVICE_TOKEN rotation helper.
   - Widget: offline mode copy and CTA, theme polish, sound/vibration toggle, “typing…” indicator.
@@ -212,7 +227,19 @@ Additional runtime counters to consider: bridge failures, webhook auth failures,
   - `/note` sets private note; audit entry created.
   - Inline Claim/Close buttons and `/claim` `/close` commands work.
   - Reminders (T+5/T+15 pin) and auto‑close (configurable; 5m in pilot) work.
+  - System messages: `welcome_message`, `waiting_for_agent`, `conversation_reopened`, unclaimed reminders, and `closed_history_note` behave per Admin template flags (WS vs Persist vs Telegram) and respect Rate(s).
   - Rate limits and blocklist work.
+
+## 17. Release & Versioning
+
+- Widget build & cache busting
+  - `npm run build` produces `dist/public/widget.min.js` (esbuild, minified)
+  - `npm run release:widget` prints a snippet with `?v=<timestamp>-<git-sha>` for cache busting
+  - Update the frontend `<script src="https://cms.autoroad.lv/widget.js?v=...">` and redeploy
+  - Server serves minified when present and uses immutable caching for versioned URLs
+- Service restarts
+  - Server code/config changes require `sudo systemctl restart support-chat`
+  - Admin/template changes are hot; DB schema changes require a migration push
 
 ---
 Last updated: 2025-09-20

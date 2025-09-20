@@ -1,6 +1,7 @@
 import pino from 'pino';
 import { getPrisma } from '../db/client';
 import { sendTopicMessage, pinTopicMessage } from './telegramApi';
+import { emitServiceMessage } from './systemMessages';
 
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
@@ -39,12 +40,9 @@ export function startSchedulers(): void {
         if (c.status === 'OPEN_UNCLAIMED') {
           const five = 5 * 60 * 1000, fifteen = 15 * 60 * 1000;
           if (msSinceCustomer >= five && msSinceCustomer < fifteen) {
-            try { await sendTopicMessage(c.id, 'Reminder: Conversation unclaimed. Use Claim button or /claim.'); } catch {}
+            try { await emitServiceMessage(c.id, 'unclaimed_reminder_5m', {}); } catch {}
           } else if (msSinceCustomer >= fifteen && msSinceCustomer < (15 * 60 * 1000 + 60 * 1000)) {
-            try {
-              const { message_id } = await sendTopicMessage(c.id, 'Reminder: Still unclaimed. Pinning for visibility.');
-              await pinTopicMessage(message_id);
-            } catch {}
+            try { await emitServiceMessage(c.id, 'unclaimed_reminder_15m_pin', {}); } catch {}
           }
         }
       }

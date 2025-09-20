@@ -201,6 +201,52 @@
     }catch{ setMessagesStatus('Failed'); }
   };
 
+  // Message templates (simple editor)
+  const templatesTable = document.createElement('div');
+  templatesTable.className = 'card';
+  templatesTable.innerHTML = '<div class="flex" style="justify-content:space-between"><div>System messages</div><div id="tmplStatus" style="opacity:.8"></div></div><div id="tmplWrap"></div>';
+  document.querySelector('main .grid > div').appendChild(templatesTable);
+  const tmplStatus = templatesTable.querySelector('#tmplStatus');
+  function setTmplStatus(msg){ tmplStatus.textContent = msg; setTimeout(()=>{ tmplStatus.textContent=''; }, 1500) }
+  async function loadTemplates(){
+    const wrap = templatesTable.querySelector('#tmplWrap'); wrap.innerHTML = '';
+    try{
+      const list = await fetchJSON(origin + '/v1/admin/message-templates');
+      const table = document.createElement('table'); table.className='table';
+      table.innerHTML = '<thead><tr><th>Key</th><th>Enabled</th><th style="width:44%">Text</th><th>WS</th><th>Persist</th><th>Telegram</th><th>Pin</th><th>Rate(s)</th><th>Save</th></tr></thead><tbody></tbody>';
+      const tbody = table.querySelector('tbody');
+      (list||[]).forEach((t)=>{
+        const tr = document.createElement('tr');
+        const tdKey = document.createElement('td'); tdKey.textContent = t.key; tr.appendChild(tdKey);
+        const tdEn = document.createElement('td'); const cEn = document.createElement('input'); cEn.type='checkbox'; cEn.checked=!!t.enabled; tdEn.appendChild(cEn); tr.appendChild(tdEn);
+        const tdText = document.createElement('td'); const ta = document.createElement('textarea'); ta.rows=2; ta.style.width='100%'; ta.value = (t.text||'').toString(); tdText.appendChild(ta); tr.appendChild(tdText);
+        const tdWs = document.createElement('td'); const cWs = document.createElement('input'); cWs.type='checkbox'; cWs.checked=!!t.toCustomerWs; tdWs.appendChild(cWs); tr.appendChild(tdWs);
+        const tdPe = document.createElement('td'); const cPe = document.createElement('input'); cPe.type='checkbox'; cPe.checked=!!t.toCustomerPersist; tdPe.appendChild(cPe); tr.appendChild(tdPe);
+        const tdTg = document.createElement('td'); const cTg = document.createElement('input'); cTg.type='checkbox'; cTg.checked=!!t.toTelegram; tdTg.appendChild(cTg); tr.appendChild(tdTg);
+        const tdPin = document.createElement('td'); const cPin = document.createElement('input'); cPin.type='checkbox'; cPin.checked=!!t.pinInTopic; cPin.disabled = !cTg.checked; cTg.onchange = ()=>{ cPin.disabled = !cTg.checked; if(!cTg.checked) cPin.checked=false; }; tdPin.appendChild(cPin); tr.appendChild(tdPin);
+        const tdRate = document.createElement('td'); const inpRate = document.createElement('input'); inpRate.type='number'; inpRate.min='0'; inpRate.placeholder='sec'; inpRate.style.width='72px'; inpRate.value = (t.rateLimitPerConvSec==null?'':String(t.rateLimitPerConvSec)); tdRate.appendChild(inpRate); tr.appendChild(tdRate);
+        const tdSave = document.createElement('td'); const btnSave = document.createElement('button'); btnSave.textContent='Save'; btnSave.onclick=async()=>{
+          btnSave.disabled=true; try{
+            await postJSON(origin + '/v1/admin/message-templates/upsert', {
+              key: t.key,
+              enabled: !!cEn.checked,
+              text: ta.value,
+              toCustomerWs: !!cWs.checked,
+              toCustomerPersist: !!cPe.checked,
+              toTelegram: !!cTg.checked,
+              pinInTopic: !!cPin.checked,
+              rateLimitPerConvSec: inpRate.value ? parseInt(inpRate.value,10) : null,
+            }); setTmplStatus('Saved');
+          }catch{ setTmplStatus('Failed'); }
+          finally{ btnSave.disabled=false; }
+        }; tdSave.appendChild(btnSave); tr.appendChild(tdSave);
+        tbody.appendChild(tr);
+      });
+      wrap.appendChild(table);
+    }catch{ wrap.textContent = 'Failed to load templates'; }
+  }
+  // load on init
+
   statusSel.onchange = loadConversations;
   // debounce dynamic search (3+ chars)
   let searchTimer = null; searchInput.addEventListener('input', ()=>{ clearTimeout(searchTimer); searchTimer = setTimeout(()=>{ const q=(searchInput.value||'').trim(); if(q.length===0 || q.length>=3){ loadConversations(); } }, 250); });
@@ -213,5 +259,5 @@
     }
   };
 
-  (function init(){ tokenInput.value = getToken(); statusSel.value='all'; refreshMetricsBtn.click(); loadSettings(); loadConversations(); loadAgents(); populateClosingAgents(); })();
+  (function init(){ tokenInput.value = getToken(); statusSel.value='all'; refreshMetricsBtn.click(); loadSettings(); loadConversations(); loadAgents(); populateClosingAgents(); loadTemplates(); })();
 })();

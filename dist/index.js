@@ -49,6 +49,8 @@ const server_1 = require("./ws/server");
 const webhook_1 = require("./telegram/webhook");
 const scheduler_1 = require("./services/scheduler");
 const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
+const systemMessages_1 = require("./services/systemMessages");
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
 const logger = (0, pino_1.default)({ transport: { target: 'pino-pretty' } });
 const app = (0, express_1.default)();
@@ -83,12 +85,50 @@ app.get('/metrics', async (_req, res) => {
 app.get('/docs/openapi.yaml', (_req, res) => {
     res.sendFile(require('path').join(__dirname, 'docs', 'openapi.yaml'));
 });
-// Serve widget script
-app.get('/widget.js', (_req, res) => {
+// Serve widget script (minified if available). If a version (?v=...) is provided,
+// enable long-lived immutable caching; otherwise use a short TTL.
+app.get('/widget.js', (req, res) => {
     res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.type('application/javascript');
-    res.sendFile(path_1.default.join(__dirname, 'public', 'widget.js'));
+    const version = (req.query && req.query.v) ? String(req.query.v) : '';
+    if (version) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+    else {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+    }
+    const minPath = path_1.default.join(__dirname, 'public', 'widget.min.js');
+    const plainPath = path_1.default.join(__dirname, 'public', 'widget.js');
+    try {
+        if (fs_1.default.existsSync(minPath)) {
+            return res.sendFile(minPath);
+        }
+    }
+    catch { }
+    return res.sendFile(plainPath);
+});
+// Also expose the minified name explicitly (same cache rules)
+app.get('/widget.min.js', (req, res) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.type('application/javascript');
+    const version = (req.query && req.query.v) ? String(req.query.v) : '';
+    if (version) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+    else {
+        res.setHeader('Cache-Control', 'public, max-age=300');
+    }
+    const minPath = path_1.default.join(__dirname, 'public', 'widget.min.js');
+    const plainPath = path_1.default.join(__dirname, 'public', 'widget.js');
+    try {
+        if (fs_1.default.existsSync(minPath)) {
+            return res.sendFile(minPath);
+        }
+    }
+    catch { }
+    return res.sendFile(plainPath);
 });
 // Minimal admin UI (static)
 app.use('/admin', express_1.default.static(path_1.default.join(__dirname, 'public', 'admin')));
@@ -112,4 +152,5 @@ app.use((err, req, res, _next) => {
 });
 server.listen(PORT, () => logger.info(`Support Chat API listening on ${PORT}`));
 (0, scheduler_1.startSchedulers)();
+(0, systemMessages_1.seedDefaultMessageTemplates)().catch(() => { });
 //# sourceMappingURL=index.js.map

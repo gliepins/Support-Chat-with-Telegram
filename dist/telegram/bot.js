@@ -11,6 +11,14 @@ const agentService_1 = require("../services/agentService");
 const telegramApi_1 = require("../services/telegramApi");
 const hub_1 = require("../ws/hub");
 const logger = (0, pino_1.default)({ transport: { target: 'pino-pretty' } });
+function startsWithSlash(text) {
+    return text.trim().startsWith('/');
+}
+function isKnownCommandText(text) {
+    const first = (text.trim().split(/\s+/)[0] || '').toLowerCase();
+    const [base = ''] = first.split('@');
+    return ['/help', '/claim', '/close', '/note', '/codename', '/myname', '/whoami', '/myid'].includes(base);
+}
 async function handleTelegramUpdate(update) {
     const prisma = (0, client_1.getPrisma)();
     const msg = update.message;
@@ -28,10 +36,31 @@ async function handleTelegramUpdate(update) {
     }
     // If in group root (no thread), handle only agent utility commands and exit
     if (!threadId) {
-        const text = msg.text || msg.caption;
-        if (!text)
+        const text = String(msg.text ?? msg.caption ?? '');
+        if (text.length === 0)
             return;
-        if (typeof text === 'string' && (/^\/myname\b/.test(text) || /^\/whoami\b/.test(text))) {
+        const safeText = text;
+        if (/^\/help\b/.test(safeText)) {
+            try {
+                logger.info({ event: 'help_root_caught', text });
+            }
+            catch { }
+            const help = [
+                'Commands:',
+                '/claim — assign conversation to yourself (in topic)',
+                '/close — close the conversation (in topic)',
+                '/note <text> — set private note (in topic)',
+                '/codename <text> — set codename (in topic)',
+                '/myname or /whoami — your agent display name',
+                '/myid — your Telegram id',
+            ].join('\n');
+            try {
+                await (0, telegramApi_1.sendGroupMessage)(help);
+            }
+            catch { }
+            return;
+        }
+        if ((/^\/myname\b/.test(safeText) || /^\/whoami\b/.test(safeText))) {
             const tgIdNum = msg.from?.id;
             if (!tgIdNum)
                 return;
@@ -44,7 +73,7 @@ async function handleTelegramUpdate(update) {
                 await (0, telegramApi_1.sendGroupMessage)('Could not look up your agent name right now.');
             }
         }
-        if (typeof text === 'string' && /^\/myid\b/.test(text)) {
+        if (/^\/myid\b/.test(safeText)) {
             const tgIdNum = msg.from?.id;
             if (!tgIdNum)
                 return;
@@ -61,12 +90,44 @@ async function handleTelegramUpdate(update) {
         logger.warn({ threadId }, 'no conversation found for thread');
         return;
     }
-    const text = msg.text || msg.caption;
-    if (!text)
+    const text = String(msg.text ?? msg.caption ?? '');
+    if (text.length === 0)
         return;
+    const safeText = text;
+    // Log any slash messages for troubleshooting
+    try {
+        if (safeText.trim().startsWith('/')) {
+            const base = (safeText.trim().split(/\s+/)[0] || '').toLowerCase();
+            const baseNoBot = base.split('@')[0];
+            logger.info({ event: 'slash_in_topic', raw: text, base, baseNoBot, threadId });
+        }
+    }
+    catch { }
+    // Robust base command extraction
+    const baseCmd = (safeText.trim().split(/\s+/)[0] || '').toLowerCase().split('@')[0];
+    if (baseCmd === '/help') {
+        try {
+            logger.info({ event: 'help_topic_caught', text, threadId });
+        }
+        catch { }
+        const help = [
+            'Commands:',
+            '/claim — assign conversation to yourself',
+            '/close — close the conversation',
+            '/note <text> — set private note',
+            '/codename <text> — set codename',
+            '/myname or /whoami — your agent display name',
+            '/myid — your Telegram id',
+        ].join('\n');
+        try {
+            await (0, telegramApi_1.sendAgentMessage)(conversation.id, help);
+        }
+        catch { }
+        return;
+    }
     // /codename (set conversation codename silently)
-    if (typeof text === 'string' && text.startsWith('/codename')) {
-        const rest = text.replace(/^\/codename\s*/, '').trim();
+    if (safeText.startsWith('/codename')) {
+        const rest = safeText.replace(/^\/codename\s*/, '').trim();
         if (rest.length < 2 || rest.length > 48) {
             try {
                 await (0, telegramApi_1.sendAgentMessage)(conversation.id, 'Codename must be 2-48 characters.');
@@ -87,7 +148,7 @@ async function handleTelegramUpdate(update) {
         return;
     }
     // /myname or /whoami (reply with assigned agent display name)
-    if (typeof text === 'string' && (/^\/myname\b/.test(text) || /^\/whoami\b/.test(text))) {
+    if ((/^\/myname\b/.test(safeText) || /^\/whoami\b/.test(safeText))) {
         const tgIdNum = msg.from?.id;
         if (!tgIdNum)
             return;
@@ -111,7 +172,7 @@ async function handleTelegramUpdate(update) {
         return;
     }
     // /myid (reply with numeric Telegram user id)
-    if (typeof text === 'string' && /^\/myid\b/.test(text)) {
+    if (/^\/myid\b/.test(safeText)) {
         const tgIdNum = msg.from?.id;
         if (!tgIdNum)
             return;
@@ -122,8 +183,8 @@ async function handleTelegramUpdate(update) {
         return;
     }
     // /note command (private note; not sent to customer)
-    if (typeof text === 'string' && text.startsWith('/note')) {
-        const note = text.replace(/^\/note\s*/, '').trim();
+    if (safeText.startsWith('/note')) {
+        const note = safeText.replace(/^\/note\s*/, '').trim();
         await prisma.conversation.update({ where: { id: conversation.id }, data: { aboutNote: note || null } });
         await (0, conversationService_1.recordAudit)(conversation.id, `telegram:${msg.from?.id ?? 'unknown'}`, 'set_note', { length: note.length });
         try {
@@ -133,7 +194,7 @@ async function handleTelegramUpdate(update) {
         return;
     }
     // /claim (assign to current Telegram user)
-    if (typeof text === 'string' && text.startsWith('/claim')) {
+    if (safeText.startsWith('/claim')) {
         const tgId = msg.from?.id;
         if (!tgId)
             return;
@@ -155,18 +216,44 @@ async function handleTelegramUpdate(update) {
         return;
     }
     // /close (close conversation and topic)
-    if (typeof text === 'string' && text.startsWith('/close')) {
+    if (safeText.startsWith('/close')) {
         const tgId = msg.from?.id;
-        await (0, conversationService_1.closeConversation)(conversation.id, `telegram:${tgId ?? 'unknown'}`);
-        try {
-            await (0, telegramApi_1.closeTopic)(conversation.id);
-        }
-        catch { }
+        await (0, conversationService_1.closeConversation)(conversation.id, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
         try {
             const prisma = (0, client_1.getPrisma)();
             const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
             const closing = agent?.closingMessage && agent.isActive ? agent.closingMessage : null;
-            await (0, telegramApi_1.sendAgentMessage)(conversation.id, closing || `Closed by @${msg.from?.username ?? tgId}`);
+            const closingText = closing || 'Conversation closed. You can write to reopen.';
+            // First persist to customer transcript and broadcast
+            const created = await (0, conversationService_1.addMessage)(conversation.id, 'OUTBOUND', closingText);
+            let label = null;
+            try {
+                label = await (0, conversationService_1.getAssignedAgentName)(conversation.id);
+            }
+            catch { }
+            (0, hub_1.broadcastToConversation)(conversation.id, { direction: 'OUTBOUND', text: created.text, agent: label || (msg.from?.username ? '@' + msg.from.username : undefined) });
+            // Notify closed state immediately to clients
+            try {
+                (0, hub_1.broadcastToConversation)(conversation.id, { type: 'conversation_closed' });
+            }
+            catch { }
+            // Then post to Telegram topic
+            try {
+                await (0, telegramApi_1.sendAgentMessage)(conversation.id, closingText);
+            }
+            catch { }
+        }
+        catch { }
+        try {
+            await (0, telegramApi_1.closeTopic)(conversation.id);
+        }
+        catch { }
+        return;
+    }
+    // Intercept any unknown slash command so it never reaches the customer
+    if (startsWithSlash(safeText) && !isKnownCommandText(safeText)) {
+        try {
+            await (0, telegramApi_1.sendAgentMessage)(conversation.id, 'Unknown command. Send /help for available commands.');
         }
         catch { }
         return;
@@ -186,7 +273,7 @@ async function handleTelegramUpdate(update) {
         catch { }
         return;
     }
-    const created = await (0, conversationService_1.addMessage)(conversation.id, 'OUTBOUND', text);
+    const created = await (0, conversationService_1.addMessage)(conversation.id, 'OUTBOUND', safeText);
     let agentName = null;
     try {
         agentName = await (0, conversationService_1.getAssignedAgentName)(conversation.id);

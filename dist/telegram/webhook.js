@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -28,6 +61,41 @@ function telegramRouter() {
         }
         const update = req.body;
         logger.info({ update }, 'telegram update');
+        // Fallback: intercept /help at webhook level to avoid forwarding to customer
+        try {
+            const msg = update && update.message;
+            const text = msg && (msg.text || msg.caption);
+            if (text && typeof text === 'string' && /^\/help\b/i.test(text.trim())) {
+                const threadId = msg.message_thread_id;
+                const help = [
+                    'Commands:',
+                    '/claim — assign conversation to yourself',
+                    '/close — close the conversation',
+                    '/note <text> — set private note',
+                    '/codename <text> — set codename',
+                    '/myname or /whoami — your agent display name',
+                    '/myid — your Telegram id',
+                ].join('\n');
+                if (threadId) {
+                    try {
+                        const prisma = (0, client_1.getPrisma)();
+                        const conv = await prisma.conversation.findFirst({ where: { threadId } });
+                        if (conv) {
+                            await (0, telegramApi_1.sendAgentMessage)(conv.id, help);
+                        }
+                    }
+                    catch { }
+                }
+                else {
+                    try {
+                        await (0, telegramApi_1.sendGroupMessage)(help);
+                    }
+                    catch { }
+                }
+                return res.json({ ok: true });
+            }
+        }
+        catch { }
         // Handle inline button callbacks
         if (update && update.callback_query) {
             try {
@@ -67,13 +135,36 @@ function telegramRouter() {
                     }
                     else if (action === 'close') {
                         const tgId = cb.from?.id;
-                        await (0, conversationService_1.closeConversation)(conversationId, `telegram:${tgId ?? 'unknown'}`);
+                        await (0, conversationService_1.closeConversation)(conversationId, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
                         try {
-                            await (0, telegramApi_1.closeTopic)(conversationId);
-                        }
-                        catch { }
-                        try {
-                            await (0, telegramApi_1.sendAgentMessage)(conversationId, `Closed by @${cb.from?.username ?? tgId}`);
+                            const prisma = (0, client_1.getPrisma)();
+                            const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
+                            const closing = agent && agent.isActive && agent.closingMessage ? agent.closingMessage : 'Conversation closed. You can write to reopen.';
+                            // First persist to transcript and broadcast to customer
+                            try {
+                                const { addMessage, getAssignedAgentName } = await Promise.resolve().then(() => __importStar(require('../services/conversationService')));
+                                const msgRow = await addMessage(conversationId, 'OUTBOUND', closing);
+                                let label = null;
+                                try {
+                                    label = await getAssignedAgentName(conversationId);
+                                }
+                                catch { }
+                                (0, hub_1.broadcastToConversation)(conversationId, { direction: 'OUTBOUND', text: msgRow.text, agent: label || 'Support' });
+                                try {
+                                    (0, hub_1.broadcastToConversation)(conversationId, { type: 'conversation_closed' });
+                                }
+                                catch { }
+                            }
+                            catch { }
+                            // Then notify Telegram topic and close it
+                            try {
+                                await (0, telegramApi_1.sendAgentMessage)(conversationId, closing);
+                            }
+                            catch { }
+                            try {
+                                await (0, telegramApi_1.closeTopic)(conversationId);
+                            }
+                            catch { }
                         }
                         catch { }
                     }

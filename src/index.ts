@@ -11,6 +11,8 @@ import { attachWsServer } from './ws/server';
 import { telegramRouter } from './telegram/webhook';
 import { startSchedulers } from './services/scheduler';
 import path from 'path';
+import fs from 'fs';
+import { seedDefaultMessageTemplates } from './services/systemMessages';
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 4010;
 const logger = pino({ transport: { target: 'pino-pretty' } });
@@ -49,12 +51,46 @@ app.get('/metrics', async (_req, res) => {
 app.get('/docs/openapi.yaml', (_req, res) => {
   res.sendFile(require('path').join(__dirname, 'docs', 'openapi.yaml'));
 });
-// Serve widget script
-app.get('/widget.js', (_req, res) => {
+// Serve widget script (minified if available). If a version (?v=...) is provided,
+// enable long-lived immutable caching; otherwise use a short TTL.
+app.get('/widget.js', (req, res) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.type('application/javascript');
-  res.sendFile(path.join(__dirname, 'public', 'widget.js'));
+  const version = (req.query && (req.query as any).v) ? String((req.query as any).v) : '';
+  if (version) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+  }
+  const minPath = path.join(__dirname, 'public', 'widget.min.js');
+  const plainPath = path.join(__dirname, 'public', 'widget.js');
+  try {
+    if (fs.existsSync(minPath)) {
+      return res.sendFile(minPath);
+    }
+  } catch {}
+  return res.sendFile(plainPath);
+});
+// Also expose the minified name explicitly (same cache rules)
+app.get('/widget.min.js', (req, res) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.type('application/javascript');
+  const version = (req.query && (req.query as any).v) ? String((req.query as any).v) : '';
+  if (version) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  } else {
+    res.setHeader('Cache-Control', 'public, max-age=300');
+  }
+  const minPath = path.join(__dirname, 'public', 'widget.min.js');
+  const plainPath = path.join(__dirname, 'public', 'widget.js');
+  try {
+    if (fs.existsSync(minPath)) {
+      return res.sendFile(minPath);
+    }
+  } catch {}
+  return res.sendFile(plainPath);
 });
 // Minimal admin UI (static)
 app.use('/admin', express.static(path.join(__dirname, 'public', 'admin')));
@@ -81,3 +117,4 @@ app.use((err: any, req: express.Request, res: express.Response, _next: express.N
 
 server.listen(PORT, () => logger.info(`Support Chat API listening on ${PORT}`));
 startSchedulers();
+seedDefaultMessageTemplates().catch(()=>{});

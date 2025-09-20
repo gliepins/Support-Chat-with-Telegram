@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Support Chat API
-  version: 0.1.0
+  version: 1.0.0
 servers:
   - url: /
 paths:
@@ -11,6 +11,22 @@ paths:
       responses:
         '200':
           description: OK
+  /metrics:
+    get:
+      summary: Prometheus-style metrics
+      responses:
+        '200':
+          description: Text metrics
+  /docs/openapi.yaml:
+    get:
+      summary: OpenAPI spec
+      responses:
+        '200': { description: OK }
+  /widget.js:
+    get:
+      summary: Support widget script
+      responses:
+        '200': { description: OK }
   /v1/conversations/start:
     post:
       summary: Start a conversation
@@ -23,9 +39,18 @@ paths:
               properties:
                 name:
                   type: string
+                  description: Optional nickname (2–32 chars, no links)
       responses:
         '200':
           description: Conversation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  conversation_id: { type: string }
+                  token: { type: string, description: Short-lived JWT bound to IP hash }
+                  codename: { type: string }
   /v1/conversations/{id}/name:
     patch:
       summary: Set customer nickname
@@ -34,6 +59,8 @@ paths:
           name: id
           required: true
           schema: { type: string }
+      security:
+        - conversation_jwt: []
       requestBody:
         required: true
         content:
@@ -44,21 +71,102 @@ paths:
               properties:
                 name:
                   type: string
+                  description: 2–32 chars; links not allowed
       responses:
         '200':
           description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  customerName: { type: string }
+        '400': { description: Validation error }
+  /v1/conversations/{id}/messages:
+    get:
+      summary: Fetch conversation messages for widget history restore
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [OPEN_UNCLAIMED, OPEN_ASSIGNED, AWAITING_CUSTOMER, CLOSED, BLOCKED]
+                  messages:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        createdAt: { type: string, format: date-time }
+                        direction: { type: string, enum: [INBOUND, OUTBOUND] }
+                        text: { type: string }
+                        agent: { type: string, nullable: true }
+  /v1/ws:
+    get:
+      summary: WebSocket endpoint for real-time messaging
+      parameters:
+        - in: query
+          name: token
+          required: true
+          schema: { type: string }
+      responses:
+        '101': { description: WebSocket upgrade }
+
+  # Admin (SERVICE_TOKEN)
   /v1/conversations:
     get:
       summary: List conversations (admin)
+      security:
+        - service_token: []
       parameters:
         - in: query
           name: status
+          schema: { type: string, enum: [open, closed, blocked, all] }
+        - in: query
+          name: q
           schema: { type: string }
       responses:
         '200': { description: OK }
   /v1/conversations/{id}:
     get:
       summary: Conversation detail (admin)
+      security:
+        - service_token: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+        '404': { description: Not found }
+  /v1/conversations/{id}/export.json:
+    get:
+      summary: Export transcript as JSON (admin)
+      security:
+        - service_token: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        '200': { description: OK }
+  /v1/conversations/{id}/export.csv:
+    get:
+      summary: Export transcript as CSV (admin)
+      security:
+        - service_token: []
       parameters:
         - in: path
           name: id
@@ -69,12 +177,194 @@ paths:
   /v1/moderation/close:
     post:
       summary: Close conversation (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
       responses:
         '200': { description: OK }
   /v1/moderation/block:
     post:
       summary: Block conversation (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id: { type: string }
       responses:
         '200': { description: OK }
+  /v1/admin/conversations/bulk-delete:
+    post:
+      summary: Bulk delete conversations by ids or status (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids:
+                  type: array
+                  items: { type: string }
+                status:
+                  type: string
+                  enum: [open, closed, blocked, all]
+      responses:
+        '200': { description: OK }
+  /v1/admin/agents:
+    get:
+      summary: List agents (admin)
+      security:
+        - service_token: []
+      responses:
+        '200': { description: OK }
+  /v1/admin/agents/upsert:
+    post:
+      summary: Upsert agent display name (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tgId, displayName]
+              properties:
+                tgId: { oneOf: [{ type: string }, { type: integer }] }
+                displayName: { type: string }
+      responses:
+        '200': { description: OK }
+  /v1/admin/agents/disable:
+    post:
+      summary: Disable agent (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tgId]
+              properties:
+                tgId: { oneOf: [{ type: string }, { type: integer }] }
+      responses:
+        '200': { description: OK }
+  /v1/admin/agents/enable:
+    post:
+      summary: Enable agent (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tgId]
+              properties:
+                tgId: { oneOf: [{ type: string }, { type: integer }] }
+      responses:
+        '200': { description: OK }
+  /v1/admin/agents/closing-message:
+    post:
+      summary: Set agent closing message (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tgId, message]
+              properties:
+                tgId: { oneOf: [{ type: string }, { type: integer }] }
+                message: { type: string }
+      responses:
+        '200': { description: OK }
+  /v1/admin/settings:
+    get:
+      summary: Get settings (admin)
+      security:
+        - service_token: []
+      responses:
+        '200': { description: OK }
+    post:
+      summary: Upsert settings (admin)
+      security:
+        - service_token: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [welcome_message]
+              properties:
+                welcome_message: { type: string }
+      responses:
+        '200': { description: OK }
+  /v1/admin/health/deep:
+    get:
+      summary: Deep health check (admin)
+      security:
+        - service_token: []
+      responses:
+        '200': { description: OK }
+
+  # Telegram webhook
+  /v1/telegram/webhook/{secret}:
+    post:
+      summary: Telegram webhook receiver
+      parameters:
+        - in: path
+          name: secret
+          required: true
+          schema: { type: string }
+      security:
+        - telegram_header: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200': { description: OK }
+
+components:
+  securitySchemes:
+    service_token:
+      type: apiKey
+      in: header
+      name: x-internal-auth
+      description: SERVICE_TOKEN for internal/admin endpoints
+    conversation_jwt:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Short-lived JWT bound to conversation_id and IP hash
+    telegram_header:
+      type: apiKey
+      in: header
+      name: X-Telegram-Bot-Api-Secret-Token
+      description: Optional header secret; enforced if TELEGRAM_HEADER_SECRET is set
 
 

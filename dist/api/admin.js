@@ -54,7 +54,31 @@ router.get('/v1/conversations', async (req, res) => {
         const status = req.query.status || 'all';
         const q = req.query.q || '';
         const list = await (0, conversationService_1.listConversations)(status, q);
-        return res.json(list);
+        // Enrich with assigned agent display name via bulk lookup for reliability
+        const ids = Array.from(new Set(list.map((c) => c.assignedAgentTgId).filter((v) => !!v)));
+        if (ids.length === 0) {
+            return res.json(list);
+        }
+        const prisma = (0, client_1.getPrisma)();
+        const tgIdBigs = ids.map((s) => {
+            try {
+                return BigInt(String(s));
+            }
+            catch {
+                return null;
+            }
+        }).filter(Boolean);
+        const agents = await prisma.agent.findMany({ where: { tgId: { in: tgIdBigs } } });
+        const idToName = new Map();
+        for (const a of agents) {
+            if (a.isActive)
+                idToName.set(a.tgId.toString(), a.displayName);
+        }
+        const enriched = list.map((c) => ({
+            ...c,
+            assignedAgentName: (c.assignedAgentTgId && idToName.get(String(c.assignedAgentTgId))) || null,
+        }));
+        return res.json(enriched);
     }
     catch (e) {
         return res.status(500).json({ error: 'internal_error' });
@@ -97,7 +121,40 @@ router.post('/v1/moderation/close', async (req, res) => {
     const { id } = (req.body || {});
     if (!id)
         return res.status(400).json({ error: 'id required' });
-    const conv = await (0, conversationService_1.closeConversation)(id, 'system');
+    const prisma = (0, client_1.getPrisma)();
+    const conv = await (0, conversationService_1.closeConversation)(id, 'system', { suppressCustomerNote: true });
+    try {
+        // Post closing message like Telegram /close
+        const updated = await prisma.conversation.findUnique({ where: { id } });
+        const agent = updated?.assignedAgentTgId ? await prisma.agent.findUnique({ where: { tgId: updated.assignedAgentTgId } }) : null;
+        const closing = agent && agent.isActive && agent.closingMessage ? agent.closingMessage : 'Conversation closed. You can write to reopen.';
+        try {
+            const { addMessage, getAssignedAgentName } = await Promise.resolve().then(() => __importStar(require('../services/conversationService')));
+            const msg = await addMessage(id, 'OUTBOUND', closing);
+            let label = null;
+            try {
+                label = await getAssignedAgentName(id);
+            }
+            catch { }
+            const { broadcastToConversation } = await Promise.resolve().then(() => __importStar(require('../ws/hub')));
+            broadcastToConversation(id, { direction: 'OUTBOUND', text: msg.text, agent: label || 'Support' });
+            try {
+                broadcastToConversation(id, { type: 'conversation_closed' });
+            }
+            catch { }
+            const { sendAgentMessage, closeTopic } = await Promise.resolve().then(() => __importStar(require('../services/telegramApi')));
+            try {
+                await sendAgentMessage(id, closing);
+            }
+            catch { }
+            try {
+                await closeTopic(id);
+            }
+            catch { }
+        }
+        catch { }
+    }
+    catch { }
     return res.json(conv);
 });
 router.post('/v1/moderation/block', async (req, res) => {
@@ -182,19 +239,70 @@ router.post('/v1/admin/agents/closing-message', async (req, res) => {
     const result = await (0, agentService_1.setAgentClosingMessage)(BigInt(tgId), message);
     return res.json({ tgId: result.tgId.toString(), closingMessage: result.closingMessage || null });
 });
+// Message templates admin
+router.get('/v1/admin/message-templates', async (_req, res) => {
+    const prisma = (0, client_1.getPrisma)();
+    try {
+        const rows = await prisma.messageTemplate.findMany({ orderBy: { key: 'asc' } });
+        return res.json(rows);
+    }
+    catch (e) {
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+router.post('/v1/admin/message-templates/upsert', async (req, res) => {
+    const body = (req.body || {});
+    if (!body.key || typeof body.text !== 'string')
+        return res.status(400).json({ error: 'key and text required' });
+    const prisma = (0, client_1.getPrisma)();
+    try {
+        const data = {
+            key: String(body.key),
+            enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
+            text: String(body.text),
+            toCustomerWs: !!body.toCustomerWs,
+            toCustomerPersist: !!body.toCustomerPersist,
+            toTelegram: !!body.toTelegram,
+            pinInTopic: !!body.pinInTopic,
+            rateLimitPerConvSec: body.rateLimitPerConvSec == null ? null : Number(body.rateLimitPerConvSec),
+            locale: body.locale ? String(body.locale) : 'default',
+        };
+        const row = await prisma.messageTemplate.upsert({ where: { key: data.key }, create: data, update: data });
+        return res.json(row);
+    }
+    catch (e) {
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
 // Global settings: welcome message
 router.get('/v1/admin/settings', async (_req, res) => {
     const prisma = (await Promise.resolve().then(() => __importStar(require('../db/client')))).getPrisma();
-    const rows = await prisma.$queryRaw `SELECT value FROM "Setting" WHERE key = 'welcome_message' LIMIT 1`;
-    return res.json({ welcome_message: rows && rows[0] ? rows[0].value : '' });
+    try {
+        const row = await prisma.setting.findUnique({ where: { key: 'welcome_message' } });
+        return res.json({ welcome_message: row?.value || '' });
+    }
+    catch (e) {
+        logger.warn({ err: e }, 'settings_get_error');
+        return res.status(500).json({ error: 'internal_error' });
+    }
 });
 router.post('/v1/admin/settings', async (req, res) => {
     const { welcome_message } = (req.body || {});
     if (typeof welcome_message !== 'string')
         return res.status(400).json({ error: 'welcome_message required' });
     const prisma = (await Promise.resolve().then(() => __importStar(require('../db/client')))).getPrisma();
-    await prisma.$executeRaw `INSERT INTO "Setting" (key, value) VALUES ('welcome_message', ${welcome_message}) ON CONFLICT (key) DO UPDATE SET value = ${welcome_message}`;
-    return res.json({ ok: true });
+    try {
+        await prisma.setting.upsert({
+            where: { key: 'welcome_message' },
+            create: { key: 'welcome_message', value: welcome_message },
+            update: { value: welcome_message },
+        });
+        return res.json({ ok: true });
+    }
+    catch (e) {
+        logger.warn({ err: e }, 'settings_post_error');
+        return res.status(500).json({ error: 'internal_error' });
+    }
 });
 // Deep health check: start → topic → welcome → WS token
 router.get('/v1/admin/health/deep', async (_req, res) => {

@@ -6,7 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.startSchedulers = startSchedulers;
 const pino_1 = __importDefault(require("pino"));
 const client_1 = require("../db/client");
-const telegramApi_1 = require("./telegramApi");
+const systemMessages_1 = require("./systemMessages");
 const logger = (0, pino_1.default)({ transport: { target: 'pino-pretty' } });
 function startSchedulers() {
     // Every minute: update reminder/auto-close states
@@ -40,14 +40,13 @@ function startSchedulers() {
                     const five = 5 * 60 * 1000, fifteen = 15 * 60 * 1000;
                     if (msSinceCustomer >= five && msSinceCustomer < fifteen) {
                         try {
-                            await (0, telegramApi_1.sendTopicMessage)(c.id, 'Reminder: Conversation unclaimed. Use Claim button or /claim.');
+                            await (0, systemMessages_1.emitServiceMessage)(c.id, 'unclaimed_reminder_5m', {});
                         }
                         catch { }
                     }
                     else if (msSinceCustomer >= fifteen && msSinceCustomer < (15 * 60 * 1000 + 60 * 1000)) {
                         try {
-                            const { message_id } = await (0, telegramApi_1.sendTopicMessage)(c.id, 'Reminder: Still unclaimed. Pinning for visibility.');
-                            await (0, telegramApi_1.pinTopicMessage)(message_id);
+                            await (0, systemMessages_1.emitServiceMessage)(c.id, 'unclaimed_reminder_15m_pin', {});
                         }
                         catch { }
                     }

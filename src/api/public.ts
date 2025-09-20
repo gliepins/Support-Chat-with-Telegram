@@ -4,6 +4,7 @@ import { hashIp, signConversationToken } from '../services/auth';
 import { createConversation, setNickname, listMessagesForConversation, getAssignedAgentName } from '../services/conversationService';
 import { getPrisma } from '../db/client';
 import { updateTopicTitleFromConversation } from '../services/telegramApi';
+import { getTemplateOrDefault } from '../services/systemMessages';
 import { requireConversationAuth } from '../middleware/conversationAuth';
 import { ipRateLimit, keyRateLimit } from '../middleware/rateLimit';
 
@@ -61,7 +62,16 @@ router.get('/v1/conversations/:id/messages', async (req, res) => {
       }
       return m as any;
     });
-    return res.json({ status: conv?.status || 'OPEN_UNCLAIMED', messages: enriched });
+    let closedNote: string | undefined;
+    if (conv?.status === 'CLOSED') {
+      try {
+        const tpl = await getTemplateOrDefault('closed_history_note');
+        if (tpl.enabled && tpl.toCustomerWs && typeof tpl.text === 'string' && tpl.text.trim().length > 0) {
+          closedNote = tpl.text;
+        }
+      } catch {}
+    }
+    return res.json({ status: conv?.status || 'OPEN_UNCLAIMED', messages: enriched, closed_note: closedNote });
   } catch (e: any) {
     return res.status(400).json({ error: 'bad request' });
   }

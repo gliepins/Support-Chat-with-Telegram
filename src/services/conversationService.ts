@@ -42,16 +42,10 @@ export async function createConversation(initialName?: string) {
   try {
     await ensureTopicForConversation(conversation.id);
     try { logger.info({ event: 'topic_created', conversationId: conversation.id, codename }); } catch {}
-    // Also send welcome to the customer side as first OUTBOUND message
+    // Also send welcome via centralized system messages if configured
     try {
-      const rows = await (prisma as any).$queryRaw`SELECT value FROM "Setting" WHERE key = 'welcome_message' LIMIT 1` as Array<{ value: string }>;
-      const welcome = (rows && rows[0] && rows[0].value ? rows[0].value : '').trim();
-      if (welcome) {
-        const msg = await addMessage(conversation.id, 'OUTBOUND', welcome);
-        try { logger.info({ event: 'welcome_sent', conversationId: conversation.id }); } catch {}
-        try { broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: msg.text, agent: 'Support' }); } catch {}
-      }
-      // (Moved waiting message to after customer's first inbound message)
+      const { emitServiceMessage } = await import('./systemMessages');
+      await emitServiceMessage(conversation.id, 'welcome_message', {});
     } catch (e) { try { logger.warn({ event: 'welcome_error', conversationId: conversation.id, err: e }); } catch {} }
   } catch (e) { try { logger.warn({ event: 'topic_create_error', conversationId: conversation.id, err: e }); } catch {} }
   return conversation;
@@ -138,15 +132,10 @@ export async function addMessage(conversationId: string, direction: 'INBOUND' | 
         throw new Error('conversation blocked');
       }
       await prisma.conversation.update({ where: { id: conversationId }, data: { status: 'OPEN_UNCLAIMED' } });
-      // Notify customer that the conversation has been reopened and is awaiting claim
-      const reopenText = 'Welcome back — we have reopened your chat and an agent will join shortly.';
-      try {
-        const reopened = await prisma.message.create({ data: { conversationId, direction: 'OUTBOUND', text: reopenText } });
-        try { broadcastToConversation(conversationId, { direction: 'OUTBOUND', text: reopened.text, agent: 'Support' }); } catch {}
-      } catch {}
+      try { const { emitServiceMessage } = await import('./systemMessages'); await emitServiceMessage(conversationId, 'conversation_reopened', {}); } catch {}
     }
   }
-  // Count messages before creating new one (to detect first inbound)
+  // Count messages before creating new one (used for metrics or future conditions)
   const messagesBefore = await prisma.message.count({ where: { conversationId } });
   const msg = await prisma.message.create({
     data: {
@@ -157,14 +146,12 @@ export async function addMessage(conversationId: string, direction: 'INBOUND' | 
   });
   const nowField = direction === 'INBOUND' ? { lastCustomerAt: new Date() } : { lastAgentAt: new Date() };
   await prisma.conversation.update({ where: { id: conversationId }, data: nowField });
-  // After the very first customer message, inform them we are awaiting claim
-  if (direction === 'INBOUND' && messagesBefore === 0) {
+  // While unclaimed: after any inbound, show waiting note (rate-limited via template)
+  if (direction === 'INBOUND') {
     try {
       const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
       if (conv && conv.assignedAgentTgId == null) {
-        const waitText = 'Thanks for your message — waiting for a support agent to join.';
-        const out = await prisma.message.create({ data: { conversationId, direction: 'OUTBOUND', text: waitText } });
-        try { broadcastToConversation(conversationId, { direction: 'OUTBOUND', text: out.text, agent: 'Support' }); } catch {}
+        try { const { emitServiceMessage } = await import('./systemMessages'); await emitServiceMessage(conversationId, 'waiting_for_agent', {}); } catch {}
       }
     } catch {}
   }

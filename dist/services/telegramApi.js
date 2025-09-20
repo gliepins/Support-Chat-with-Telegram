@@ -18,6 +18,9 @@ const pino_1 = __importDefault(require("pino"));
 const client_1 = require("../db/client");
 const logger = (0, pino_1.default)({ transport: { target: 'pino-pretty' } });
 const API_BASE = 'https://api.telegram.org';
+function isTelegramSilent() {
+    return true;
+}
 async function tgFetch(method, body) {
     const token = process.env.BOT_TOKEN;
     if (!token)
@@ -63,7 +66,7 @@ async function sendAgentMessage(conversationId, text) {
     const updated = await prisma.conversation.findUnique({ where: { id: conversationId } });
     if (!updated?.threadId)
         throw new Error('thread id missing');
-    await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text });
+    await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text, disable_notification: isTelegramSilent() });
 }
 async function sendCustomerMessage(conversationId, text) {
     const prisma = (0, client_1.getPrisma)();
@@ -76,7 +79,7 @@ async function sendCustomerMessage(conversationId, text) {
     if (!updated?.threadId)
         throw new Error('thread id missing');
     const display = updated.customerName && updated.customerName.trim().length > 0 ? updated.customerName.trim() : updated.codename;
-    await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text: `${display}: ${text}` });
+    await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text: `${display}: ${text}`, disable_notification: isTelegramSilent() });
 }
 async function updateTopicTitleFromConversation(conversationId) {
     const prisma = (0, client_1.getPrisma)();
@@ -118,7 +121,7 @@ async function sendTopicMessage(conversationId, text) {
     const updated = await prisma.conversation.findUnique({ where: { id: conversationId } });
     if (!updated?.threadId)
         throw new Error('thread id missing');
-    const resp = await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text });
+    const resp = await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: updated.threadId, text, disable_notification: isTelegramSilent() });
     return { message_id: resp.result?.message_id };
 }
 async function pinTopicMessage(messageId) {
@@ -137,7 +140,7 @@ async function sendTopicControls(conversationId) {
     const reply_markup = {
         inline_keyboard: [[{ text: 'Claim', callback_data: `claim:${conversationId}` }, { text: 'Close', callback_data: `close:${conversationId}` }]],
     };
-    await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: threadId, text: 'Actions', reply_markup });
+    await tgFetch('sendMessage', { chat_id: chatId, message_thread_id: threadId, text: 'Actions', reply_markup, disable_notification: isTelegramSilent() });
 }
 async function answerCallback(callbackQueryId, text) {
     await tgFetch('answerCallbackQuery', { callback_query_id: callbackQueryId, text: text ?? '' });
@@ -146,7 +149,7 @@ async function sendGroupMessage(text, threadId) {
     const chatId = process.env.SUPPORT_GROUP_ID;
     if (!chatId)
         throw new Error('SUPPORT_GROUP_ID not set');
-    const body = { chat_id: chatId, text };
+    const body = { chat_id: chatId, text, disable_notification: isTelegramSilent() };
     if (typeof threadId === 'number')
         body.message_thread_id = threadId;
     await tgFetch('sendMessage', body);

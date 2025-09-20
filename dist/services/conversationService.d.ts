@@ -77,7 +77,9 @@ export declare function addMessage(conversationId: string, direction: 'INBOUND' 
     direction: import(".prisma/client").$Enums.MessageDirection;
     text: string;
 }>;
-export declare function closeConversation(conversationId: string, actor: string): Promise<{
+export declare function closeConversation(conversationId: string, actor: string, opts?: {
+    suppressCustomerNote?: boolean;
+}): Promise<{
     id: string;
     codename: string;
     customerName: string | null;

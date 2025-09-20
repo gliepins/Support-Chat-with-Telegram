@@ -173,6 +173,39 @@ router.post('/v1/admin/agents/closing-message', async (req, res) => {
   return res.json({ tgId: result.tgId.toString(), closingMessage: result.closingMessage || null });
 });
 
+// Message templates admin
+router.get('/v1/admin/message-templates', async (_req, res) => {
+  const prisma = getPrisma();
+  try {
+    const rows = await (prisma as any).messageTemplate.findMany({ orderBy: { key: 'asc' } });
+    return res.json(rows);
+  } catch (e) {
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+router.post('/v1/admin/message-templates/upsert', async (req, res) => {
+  const body = (req.body || {}) as any;
+  if (!body.key || typeof body.text !== 'string') return res.status(400).json({ error: 'key and text required' });
+  const prisma = getPrisma();
+  try {
+    const data: any = {
+      key: String(body.key),
+      enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
+      text: String(body.text),
+      toCustomerWs: !!body.toCustomerWs,
+      toCustomerPersist: !!body.toCustomerPersist,
+      toTelegram: !!body.toTelegram,
+      pinInTopic: !!body.pinInTopic,
+      rateLimitPerConvSec: body.rateLimitPerConvSec == null ? null : Number(body.rateLimitPerConvSec),
+      locale: body.locale ? String(body.locale) : 'default',
+    };
+    const row = await (prisma as any).messageTemplate.upsert({ where: { key: data.key }, create: data, update: data });
+    return res.json(row);
+  } catch (e) {
+    return res.status(500).json({ error: 'internal_error' });
+  }
+});
+
 // Global settings: welcome message
 router.get('/v1/admin/settings', async (_req, res) => {
   const prisma = (await import('../db/client')).getPrisma();
