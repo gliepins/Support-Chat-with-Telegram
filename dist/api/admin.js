@@ -124,51 +124,17 @@ router.post('/v1/moderation/close', async (req, res) => {
     const prisma = (0, client_1.getPrisma)();
     const conv = await (0, conversationService_1.closeConversation)(id, 'system', { suppressCustomerNote: true });
     try {
-        // Post closing message like Telegram /close, with locale-aware fallback
-        const updated = await prisma.conversation.findUnique({ where: { id } });
-        const convLocale = String(updated?.locale || 'default');
-        let closing = 'Conversation closed. You can write to reopen.';
+        // Unified pipeline
+        const { emitServiceMessage } = await Promise.resolve().then(() => __importStar(require('../services/systemMessages')));
+        await emitServiceMessage(id, 'closing_message', {});
+        const { broadcastToConversation } = await Promise.resolve().then(() => __importStar(require('../ws/hub')));
         try {
-            if (updated?.assignedAgentTgId) {
-                const { getClosingMessageForAgentLocale } = await Promise.resolve().then(() => __importStar(require('../services/agentService')));
-                const msg = await getClosingMessageForAgentLocale(updated.assignedAgentTgId, convLocale);
-                if (msg && msg.trim())
-                    closing = msg;
-            }
-            else {
-                const agent = await prisma.agent.findFirst({ where: { isActive: true }, orderBy: { updatedAt: 'desc' } });
-                if (agent && agent.tgId) {
-                    const { getClosingMessageForAgentLocale } = await Promise.resolve().then(() => __importStar(require('../services/agentService')));
-                    const msg = await getClosingMessageForAgentLocale(agent.tgId, convLocale);
-                    if (msg && msg.trim())
-                        closing = msg;
-                }
-            }
+            broadcastToConversation(id, { type: 'conversation_closed' });
         }
         catch { }
+        const { closeTopic } = await Promise.resolve().then(() => __importStar(require('../services/telegramApi')));
         try {
-            const { addMessage, getAssignedAgentName } = await Promise.resolve().then(() => __importStar(require('../services/conversationService')));
-            const msg = await addMessage(id, 'OUTBOUND', closing);
-            let label = null;
-            try {
-                label = await getAssignedAgentName(id);
-            }
-            catch { }
-            const { broadcastToConversation } = await Promise.resolve().then(() => __importStar(require('../ws/hub')));
-            broadcastToConversation(id, { direction: 'OUTBOUND', text: msg.text, agent: label || 'Support' });
-            try {
-                broadcastToConversation(id, { type: 'conversation_closed' });
-            }
-            catch { }
-            const { sendAgentMessage, closeTopic } = await Promise.resolve().then(() => __importStar(require('../services/telegramApi')));
-            try {
-                await sendAgentMessage(id, closing);
-            }
-            catch { }
-            try {
-                await closeTopic(id);
-            }
-            catch { }
+            await closeTopic(id);
         }
         catch { }
     }
@@ -250,40 +216,12 @@ router.post('/v1/admin/agents/enable', async (req, res) => {
     const result = await (0, agentService_1.enableAgent)(BigInt(tgId));
     return res.json({ tgId: result.tgId.toString(), isActive: result.isActive });
 });
+// Deprecated: agent-specific closing messages
 router.post('/v1/admin/agents/closing-message', async (req, res) => {
-    const { tgId, message, locale } = (req.body || {});
-    if (!tgId || typeof message !== 'string')
-        return res.status(400).json({ error: 'tgId and message required' });
-    const prisma = (0, client_1.getPrisma)();
-    const loc = (locale && locale.trim()) ? locale.trim() : 'default';
-    if (loc === 'default') {
-        // maintain legacy default on Agent table
-        const result = await (0, agentService_1.setAgentClosingMessage)(BigInt(tgId), message);
-        return res.json({ tgId: result.tgId.toString(), closingMessage: result.closingMessage || null, locale: loc });
-    }
-    const row = await prisma.agentClosingMessage.upsert({
-        where: { tgId_locale: { tgId: BigInt(tgId), locale: loc } },
-        create: { tgId: BigInt(tgId), locale: loc, message },
-        update: { message },
-    });
-    return res.json({ tgId: row.tgId.toString(), closingMessage: row.message || null, locale: row.locale });
+    return res.status(410).json({ error: 'deprecated', message: 'Use System messages → closing_message per locale' });
 });
-router.get('/v1/admin/agents/closing-messages', async (req, res) => {
-    const prisma = (0, client_1.getPrisma)();
-    try {
-        const rows = await prisma.agentClosingMessage.findMany({});
-        const legacy = await prisma.agent.findMany({ select: { tgId: true, closingMessage: true } });
-        // Map legacy to default entries when not overridden
-        const seen = new Set(rows.map((r) => `${String(r.tgId)}::${r.locale || 'default'}`));
-        const def = legacy
-            .filter(a => a.closingMessage && !seen.has(`${String(a.tgId)}::default`))
-            .map(a => ({ tgId: a.tgId, locale: 'default', message: a.closingMessage }));
-        const all = [...rows, ...def].map((r) => ({ tgId: String(r.tgId), locale: r.locale || 'default', message: r.message || '' }));
-        return res.json(all);
-    }
-    catch (e) {
-        return res.status(500).json({ error: 'internal_error' });
-    }
+router.get('/v1/admin/agents/closing-messages', async (_req, res) => {
+    return res.json([]);
 });
 // Message templates admin
 router.get('/v1/admin/message-templates', async (_req, res) => {

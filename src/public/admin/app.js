@@ -149,92 +149,9 @@
   };
   agentsReload.onclick = loadAgents;
 
-  // Messages & auto responses
-  const closingAgent = document.getElementById('closingAgent');
-  const closingText = document.getElementById('closingText');
-  const saveClosing = document.getElementById('saveClosing');
-  const closingBulkDelete = document.getElementById('closingBulkDelete');
-  const closingSelectAll = document.getElementById('closingSelectAll');
-  const messagesStatus = document.getElementById('messagesStatus');
-  const closingList = document.getElementById('closingList');
-  function setMessagesStatus(msg){ messagesStatus.textContent = msg; setTimeout(()=>{ messagesStatus.textContent=''; }, 1500) }
-  // Locale tabs for closing messages
-  const closingTabsWrap = document.createElement('div'); closingTabsWrap.style.margin='6px 0'; closingTabsWrap.innerHTML = '<div>Locales: <span id="closingTabs"></span> <button id="addClosingLocale" style="margin-left:8px">Add locale</button> <button id="delClosingLocale" style="margin-left:8px">Delete locale</button></div>';
-  document.querySelector('main .grid > div').appendChild(closingTabsWrap);
-  const closingTabs = closingTabsWrap.querySelector('#closingTabs'); const addClosingLocaleBtn = closingTabsWrap.querySelector('#addClosingLocale'); const delClosingLocaleBtn = closingTabsWrap.querySelector('#delClosingLocale');
-  let closingLocale = localStorage.getItem('admin:closingLocale') || 'default';
-  function renderClosingTabs(locales){
-    // reuse styles
-    if (!document.getElementById('sc-admin-tab-styles')) {
-      const st = document.createElement('style'); st.id='sc-admin-tab-styles'; st.textContent = '.sc-tab{display:inline-block;margin-right:8px;padding:6px 10px;border:1px solid #d1d5db;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;background:#f9fafb;cursor:pointer} .sc-tab[aria-selected="true"]{background:#ffffff;border-bottom-color:#2563eb;color:#111827;font-weight:600}'; document.head.appendChild(st);
-    }
-    closingTabs.innerHTML='';
-    (locales||['default']).forEach((loc)=>{ const b=document.createElement('button'); b.type='button'; b.className='sc-tab'; b.textContent=loc; b.setAttribute('aria-selected', String(loc===closingLocale)); b.onclick=(e)=>{ e.preventDefault(); closingLocale=loc; localStorage.setItem('admin:closingLocale', loc); populateClosingAgents(); }; closingTabs.appendChild(b); });
-    try{ const active = closingTabs.querySelector('button[aria-selected="true"]'); if(active) active.focus(); }catch(_){ }
-    delClosingLocaleBtn.style.display = (closingLocale==='default') ? 'none' : '';
-  }
-  addClosingLocaleBtn.onclick = async()=>{
-    // Inline locale create: copy default values for existing agents (empty if none)
-    const loc = prompt('Enter locale code (e.g., en, lv, de):',''); if(!loc) return;
-    try{
-      const all = await fetchJSON(origin + '/v1/admin/agents');
-      const closing = await fetchJSON(origin + '/v1/admin/agents/closing-messages');
-      const byTg = new Map(closing.filter(c=> (c.locale||'default')==='default' && c.message).map(c=> [String(c.tgId), c.message]));
-      for(const a of all){ const msg = byTg.get(String(a.tgId)) || ''; await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: msg, locale: loc }); }
-      localStorage.setItem('admin:closingLocale', loc); closingLocale = loc; setMessagesStatus('Locale added'); populateClosingAgents();
-    }catch{ setMessagesStatus('Failed'); }
-  };
-  delClosingLocaleBtn.onclick = async()=>{
-    if (closingLocale==='default') return; if(!confirm('Delete all closing messages for locale '+closingLocale+'?')) return;
-    try{ const list = await fetchJSON(origin + '/v1/admin/agents'); for(const a of list){ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: '', locale: closingLocale }); } localStorage.setItem('admin:closingLocale','default'); closingLocale='default'; setMessagesStatus('Deleted'); populateClosingAgents(); }catch{ setMessagesStatus('Failed'); }
-  };
-
-  async function populateClosingAgents(){
-    try{
-      const list = await fetchJSON(origin + '/v1/admin/agents');
-      const closings = await fetchJSON(origin + '/v1/admin/agents/closing-messages');
-      const locales = Array.from(new Set(closings.map(c=>c.locale||'default')));
-      if (!locales.includes('default')) locales.unshift('default');
-      renderClosingTabs(locales);
-      closingAgent.innerHTML = '';
-      closingList.innerHTML = '';
-      for(const a of list){
-        const opt = document.createElement('option');
-        opt.value = a.tgId; opt.textContent = `${a.displayName} (${a.tgId})`;
-        closingAgent.appendChild(opt);
-        const tr=document.createElement('tr');
-        const map = new Map(closings.filter(c=> String(c.tgId)===String(a.tgId)).map(c=> [c.locale||'default', c.message||'']));
-        const msg = (map.get(closingLocale) || map.get('default') || '').toString();
-        tr.innerHTML = `<td><input type="checkbox" class="closingSel" data-id="${a.tgId}"></td><td>${a.displayName} (${a.tgId})</td><td>${msg?msg:'—'}</td>`;
-        const td = document.createElement('td');
-        const edit = document.createElement('button'); edit.textContent='Edit'; edit.onclick=()=>{ closingAgent.value = a.tgId; closingText.value = msg; };
-        const del = document.createElement('button'); del.textContent='Delete'; del.style.marginLeft='6px'; del.onclick=async()=>{
-          // inline confirmation
-          if(!del.dataset.step){ del.dataset.step='confirm'; del.textContent='Confirm'; del.style.background='#dc2626'; del.style.color='#fff'; setTimeout(()=>{ del.dataset.step=''; del.textContent='Delete'; del.style=''; }, 3000); return; }
-          try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: '', locale: closingLocale }); populateClosingAgents(); }catch{}
-        };
-        td.append(edit, del); tr.appendChild(td);
-        closingList.appendChild(tr);
-      }
-    }catch{}
-  }
-  saveClosing.onclick = async ()=>{
-    const tgId = closingAgent.value; const msg = (closingText.value||'').trim(); if(!tgId){ setMessagesStatus('Select agent'); return; }
-    try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId, message: msg, locale: closingLocale }); setMessagesStatus('Saved'); closingText.value=''; populateClosingAgents(); }
-    catch{ setMessagesStatus('Failed'); }
-  };
-  closingSelectAll.onclick = () => { const checked = closingSelectAll.checked; closingList.querySelectorAll('.closingSel').forEach(c=>{ c.checked = checked; }); };
-  closingBulkDelete.onclick = async ()=>{
-    const ids = Array.from(closingList.querySelectorAll('.closingSel')).filter(c=>c.checked).map(c=>c.getAttribute('data-id')).filter(Boolean);
-    if (!ids.length){ setMessagesStatus('No selections'); return; }
-    // inline confirm on the bulk button
-    if(!closingBulkDelete.dataset.step){ closingBulkDelete.dataset.step='confirm'; closingBulkDelete.textContent='Confirm Delete'; setTimeout(()=>{ closingBulkDelete.dataset.step=''; closingBulkDelete.textContent='Delete Selected'; }, 3000); return; }
-    try{
-      for(const id of ids){ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: id, message: '', locale: closingLocale }); }
-      closingBulkDelete.dataset.step=''; closingBulkDelete.textContent='Delete Selected';
-      populateClosingAgents(); setMessagesStatus('Deleted');
-    }catch{ setMessagesStatus('Failed'); }
-  };
+  // Remove per-agent closing UI (deprecated). Kept minimal status shim.
+  function setMessagesStatus(_msg){}
+  function populateClosingAgents(){ /* no-op */ }
 
   // Message templates (simple editor)
   const templatesTable = document.createElement('div');
@@ -281,7 +198,14 @@
           del.onclick = async()=>{ if(!confirm('Delete all templates for locale '+currentLocale+'?')) return; try{ await postJSON(origin + '/v1/admin/message-templates/delete-locale', { locale: currentLocale }); localStorage.setItem('admin:tmplLocale','default'); currentLocale='default'; setTmplStatus('Deleted'); loadTemplates(); }catch{ setTmplStatus('Failed'); } };
         }
       } else { if (del) del.remove(); }
-      const list = (all||[]).filter(r=> (r.locale||'default') === currentLocale);
+      let list = (all||[]).filter(r=> (r.locale||'default') === currentLocale);
+      // Ensure the unified closing message key is always visible/editable
+      try{
+        const hasClosing = (list||[]).some(r=> String(r.key)==='closing_message');
+        if(!hasClosing){
+          list = list.concat([{ key:'closing_message', enabled:true, text:'', toCustomerWs:false, toCustomerPersist:true, toTelegram:true, pinInTopic:false, rateLimitPerConvSec:null, locale: currentLocale }]);
+        }
+      }catch(_){ }
       const table = document.createElement('table'); table.className='table';
       table.innerHTML = '<thead><tr><th>Key</th><th>Enabled</th><th style="width:44%">Text</th><th>WS</th><th>Persist</th><th>Telegram</th><th>Pin</th><th>Rate(s)</th><th>Save</th></tr></thead><tbody></tbody>';
       const tbody = table.querySelector('tbody');

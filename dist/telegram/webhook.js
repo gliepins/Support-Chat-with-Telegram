@@ -137,28 +137,10 @@ function telegramRouter() {
                         const tgId = cb.from?.id;
                         await (0, conversationService_1.closeConversation)(conversationId, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
                         try {
-                            const prisma = (0, client_1.getPrisma)();
-                            const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
-                            const closing = agent && agent.isActive && agent.closingMessage ? agent.closingMessage : 'Conversation closed. You can write to reopen.';
-                            // First persist to transcript and broadcast to customer
+                            const { emitServiceMessage } = await Promise.resolve().then(() => __importStar(require('../services/systemMessages')));
+                            await emitServiceMessage(conversationId, 'closing_message', {});
                             try {
-                                const { addMessage, getAssignedAgentName } = await Promise.resolve().then(() => __importStar(require('../services/conversationService')));
-                                const msgRow = await addMessage(conversationId, 'OUTBOUND', closing);
-                                let label = null;
-                                try {
-                                    label = await getAssignedAgentName(conversationId);
-                                }
-                                catch { }
-                                (0, hub_1.broadcastToConversation)(conversationId, { direction: 'OUTBOUND', text: msgRow.text, agent: label || 'Support' });
-                                try {
-                                    (0, hub_1.broadcastToConversation)(conversationId, { type: 'conversation_closed' });
-                                }
-                                catch { }
-                            }
-                            catch { }
-                            // Then notify Telegram topic and close it
-                            try {
-                                await (0, telegramApi_1.sendAgentMessage)(conversationId, closing);
+                                (0, hub_1.broadcastToConversation)(conversationId, { type: 'conversation_closed' });
                             }
                             catch { }
                             try {

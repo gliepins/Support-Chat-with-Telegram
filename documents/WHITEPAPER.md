@@ -21,7 +21,7 @@ This whitepaper documents the design, security posture, operational model, and r
   - Optional nickname; messages are plain text.
   - Embeddable script served at `/widget.js` (deployed at `https://cms.autoroad.lv/widget.js`).
   - Recent features: theming from site CSS vars, left/right positioning, unread badge, timestamps, auto‑reconnect and history restore, reconnect/offline banner, draft persistence, multiline input with auto‑wrap (Enter=send; Shift+Enter=newline), persistent panel state, agent labels ("[name] said:"), joined bubble, closed status note, local echo + de‑dup, cookie fallback for session, automatic session refresh after repeated WS failures.
-  - Internationalization: UI strings are locale‑aware with runtime switching via `SupportChat.setLocale('lv|en|..')`; initial locale resolved from i18next (localStorage/cookie) → `<html lang>` → browser, or forced via `SupportChat.init({ locale })`. Button label customizable per locale (e.g., EN "Message us", LV "Rakstiet mums").
+  - Internationalization: UI strings are locale‑aware with runtime switching via `SupportChat.setLocale('lv|en|..')`; initial locale resolved from i18next (localStorage/cookie) → `<html lang>` → browser, or forced via `SupportChat.init({ locale })`. Button label customizable per locale (e.g., EN "Message us", LV "Rakstiet mums"). The "joined" bubble is rendered client‑side from widget UI strings (`supportLabel` + `joinedSuffix`) and always reflects the widget’s current locale at the moment of the event.
   - UX: inline rename with localized Save/Cancel and two‑row layout; sound/vibration toggles with persisted prefs; inline confirmation (not browser alert) for clearing a chat.
 - **API Service (this repo)**
   - Node.js + TypeScript + Express for REST; ws for WebSocket; Prisma for DB access.
@@ -34,7 +34,7 @@ This whitepaper documents the design, security posture, operational model, and r
   - Tables: conversations, messages, audit_logs, agents.
   - Settings: simple key/value (e.g., `welcome_message`).
   - Localized templates: `MessageTemplateLocale(key, locale)` for system messages with fallback (exact → 2‑letter → `default` → legacy `MessageTemplate`).
-  - Localized agent closings: `AgentClosingMessage(agentTgId, locale)` with fallback (exact → 2‑letter → `default` → legacy `Agent.closingMessage`).
+  - Deprecated: `AgentClosingMessage(agentTgId, locale)` — closing text is now unified under the system template key `closing_message` per locale.
 
 ## 3. Data Model (Prisma)
 
@@ -73,8 +73,7 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
 - States tracked: OPEN_UNCLAIMED, OPEN_ASSIGNED, AWAITING_CUSTOMER, CLOSED, BLOCKED.
   - Waiting note while unclaimed: after any customer message while the conversation is unclaimed, emit `waiting_for_agent` via the centralized system messaging service according to the template flags (WS banner and/or persisted OUTBOUND). Rate‑limited per template.
   - Reopen UX: if a customer writes into a closed chat, immediately reopen to OPEN_UNCLAIMED and send “Welcome back — we have reopened your chat and an agent will join shortly.”
-  - Close UX: on close (via `/close` or inline Close), persist the agent’s configured closing message first to the customer transcript and broadcast a `conversation_closed` event to update the widget instantly; then post the same message into the Telegram topic and close it.
-  - Closing message language uses `conversation.locale` and per‑agent localized messages with fallback.
+  - Close UX: on close (via `/close` or inline Close), emit system message key `closing_message` via the centralized pipeline (Persist to transcript, optional Telegram per flags), then broadcast `conversation_closed` and close the topic. Text comes from `MessageTemplateLocale('closing_message', locale)` with standard fallback.
 
 ## 5. Nickname and Agent‑Only Notes
 
@@ -126,8 +125,7 @@ The schema is tuned for Postgres; Prisma allows swapping `provider` to mysql/sql
   - POST `/v1/admin/agents/upsert` — create/update agent display name by Telegram user id
   - POST `/v1/admin/agents/disable` — disable agent
   - POST `/v1/admin/agents/enable` — enable agent
-  - POST `/v1/admin/agents/closing-message` — set agent closing message
-    - Accepts optional `locale`; when absent, updates legacy default field.
+  - POST `/v1/admin/agents/closing-message` — deprecated (returns 410). Use System messages → `closing_message` per locale instead.
   - GET `/v1/admin/message-templates` — list system message templates
   - POST `/v1/admin/message-templates/upsert` — upsert a template (text + delivery flags + rate)
   - POST `/v1/admin/conversations/bulk-delete` — delete by ids or by status filter
@@ -201,9 +199,9 @@ Additional runtime counters to consider: bridge failures, webhook auth failures,
 - **Completed (Pilot)**
   - REST/WS bridge; widget with reconnect/history; nickname; agent notes; reminders + 5m auto‑close; rate limits; admin UI with search/export and bulk delete; agents directory with display names; strict webhook header; claim‑before‑reply.
   - Centralized System Messages: Prisma `MessageTemplate`; `emitServiceMessage()` with delivery flags (WS banner, persist bubble, Telegram, optional pin) and per‑conversation rate limit.
-  - Templates wired: `welcome_message`, `waiting_for_agent`, `conversation_reopened`, `unclaimed_reminder_5m`, `unclaimed_reminder_15m_pin`, `closed_history_note` with locale fallback.
+  - Templates wired: `welcome_message`, `waiting_for_agent`, `conversation_reopened`, `unclaimed_reminder_5m`, `unclaimed_reminder_15m_pin`, `closed_history_note`, and unified `closing_message` with locale fallback.
   - Admin: new “System messages” table with inline edit of text and flags (WS/Persist/Telegram/Pin/Rate).
-  - Widget: offline banner + retry; sound/vibration toggles with persistent prefs and configurable volume; info_note banner rendering; removed fake typing indicator; removed hardcoded “conversation closed” banner (only the persisted closing message remains); versioned/minified build and cache‑busting via `?v=`; i18n with `stringsByLocale`, `setLocale()`, localized UI buttons and titles, inline clear‑confirm.
+  - Widget: offline banner + retry; sound/vibration toggles with persistent prefs and configurable volume; info_note banner rendering; removed fake typing indicator; removed hardcoded “conversation closed” banner (only the persisted closing message remains); versioned/minified build and cache‑busting via `?v=`; i18n with `stringsByLocale`, `setLocale()`, localized UI buttons and titles, inline clear‑confirm; “joined” bubble bound to widget locale at event time.
   - Server: always silent Telegram notifications; versioned widget serving (minified if present) with long cache and immutable caching when `?v=` is used.
 - **Next (Short term)**
   - Admin: pagination, unread indicators, per‑conversation reopen/close metrics; stricter SERVICE_TOKEN rotation helper.

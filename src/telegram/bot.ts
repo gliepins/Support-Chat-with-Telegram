@@ -185,23 +185,11 @@ export async function handleTelegramUpdate(update: TgUpdate) {
     const tgId = msg.from?.id as number | undefined;
     await closeConversation(conversation.id, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
     try {
-      const prisma = getPrisma();
-      const updated = await prisma.conversation.findUnique({ where: { id: conversation.id } });
-      const convLocale = String((updated as any)?.locale || 'default');
-      let closingText: string | null = null;
-      if (tgId) {
-        try { closingText = await getClosingMessageForAgentLocale(BigInt(tgId), convLocale); } catch {}
-      }
-      if (!closingText) closingText = 'Conversation closed. You can write to reopen.';
-      // First persist to customer transcript and broadcast
-      const created = await addMessage(conversation.id, 'OUTBOUND', closingText);
-      let label: string | null = null;
-      try { label = await getAssignedAgentName(conversation.id); } catch {}
-      broadcastToConversation(conversation.id, { direction: 'OUTBOUND', text: created.text, agent: label || (msg.from?.username ? '@'+msg.from.username : undefined) });
-      // Notify closed state immediately to clients
+      // Unify via system pipeline
+      const { emitServiceMessage } = await import('../services/systemMessages');
+      await emitServiceMessage(conversation.id, 'closing_message', {});
+      // Also broadcast closed state event
       try { broadcastToConversation(conversation.id, { type: 'conversation_closed' }); } catch {}
-      // Then post to Telegram topic
-      try { await sendAgentMessage(conversation.id, closingText); } catch {}
     } catch {}
     try { await closeTopic(conversation.id); } catch {}
     return;

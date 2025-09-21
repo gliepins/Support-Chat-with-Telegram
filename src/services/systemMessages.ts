@@ -112,8 +112,31 @@ export async function emitServiceMessage(conversationId: string, key: string, ex
   const ctxBase = await loadConversationContext(conversationId);
   const ctx = Object.assign({}, ctxBase, extraContext || {});
   // Try locale-specific template first
-  let tpl = await getTemplateOrDefault(key, (ctx.locale as string) || 'default');
-  if (!tpl.enabled) return;
+  let tpl: {
+    enabled: boolean;
+    text: string;
+    toCustomerWs: boolean;
+    toCustomerPersist: boolean;
+    toTelegram: boolean;
+    pinInTopic: boolean;
+    rateLimitPerConvSec?: number | null;
+  } | null = null;
+  if (key === 'closing_message') {
+    // Unified: use only system template by locale; agent-specific overrides are deprecated
+    const prisma = getPrisma();
+    try {
+      const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+      const convLocale = String((conv as any)?.locale || 'default');
+      const t = await getTemplateOrDefault('closing_message', convLocale);
+      tpl = t;
+    } catch {}
+    if (!tpl) {
+      tpl = { enabled: true, text: 'Conversation closed. You can write to reopen.', toCustomerWs: false, toCustomerPersist: true, toTelegram: false, pinInTopic: false };
+    }
+  } else {
+    tpl = await getTemplateOrDefault(key, (ctx.locale as string) || 'default');
+  }
+  if (!tpl || !tpl.enabled) return;
   const text = render(tpl.text, ctx);
   try { logger.info({ event: 'system_msg_eval', key, flags: { ws: tpl.toCustomerWs, persist: tpl.toCustomerPersist, telegram: tpl.toTelegram, pin: tpl.pinInTopic }, rate: tpl.rateLimitPerConvSec }); } catch {}
   // rate limit

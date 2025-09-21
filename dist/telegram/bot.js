@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
@@ -220,34 +253,12 @@ async function handleTelegramUpdate(update) {
         const tgId = msg.from?.id;
         await (0, conversationService_1.closeConversation)(conversation.id, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
         try {
-            const prisma = (0, client_1.getPrisma)();
-            const updated = await prisma.conversation.findUnique({ where: { id: conversation.id } });
-            const convLocale = String(updated?.locale || 'default');
-            let closingText = null;
-            if (tgId) {
-                try {
-                    closingText = await (0, agentService_1.getClosingMessageForAgentLocale)(BigInt(tgId), convLocale);
-                }
-                catch { }
-            }
-            if (!closingText)
-                closingText = 'Conversation closed. You can write to reopen.';
-            // First persist to customer transcript and broadcast
-            const created = await (0, conversationService_1.addMessage)(conversation.id, 'OUTBOUND', closingText);
-            let label = null;
-            try {
-                label = await (0, conversationService_1.getAssignedAgentName)(conversation.id);
-            }
-            catch { }
-            (0, hub_1.broadcastToConversation)(conversation.id, { direction: 'OUTBOUND', text: created.text, agent: label || (msg.from?.username ? '@' + msg.from.username : undefined) });
-            // Notify closed state immediately to clients
+            // Unify via system pipeline
+            const { emitServiceMessage } = await Promise.resolve().then(() => __importStar(require('../services/systemMessages')));
+            await emitServiceMessage(conversation.id, 'closing_message', {});
+            // Also broadcast closed state event
             try {
                 (0, hub_1.broadcastToConversation)(conversation.id, { type: 'conversation_closed' });
-            }
-            catch { }
-            // Then post to Telegram topic
-            try {
-                await (0, telegramApi_1.sendAgentMessage)(conversation.id, closingText);
             }
             catch { }
         }

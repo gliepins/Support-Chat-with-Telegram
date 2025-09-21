@@ -74,7 +74,7 @@ Add the script to your site and initialize (replace the domain with your deploym
     // locale: 'lv',
     // or auto: locale: (localStorage.getItem('i18nextLng') || document.documentElement.lang || navigator.language || 'en'),
     stringsByLocale: {
-      en: { chatButton: 'Message us', title: 'Support' },
+      en: { chatButton: 'Message us', title: 'Support', supportLabel: 'Support', joinedSuffix: ' joined' },
       lv: { chatButton: 'Rakstiet mums', title: 'Palīdzība', saveLabel: 'Saglabāt', cancelLabel: 'Atcelt', editNamePlaceholder: 'Jūsu vārds' }
     },
     showSoundToggle: true,      // header bell icon
@@ -149,6 +149,7 @@ For single‑page apps (SPA) or when you need to toggle the widget at runtime:
 - `SupportChat.recheck()` — manually re‑run the path gating
 - `SupportChat.show()` / `SupportChat.hide()` — programmatically toggle visibility
 - `SupportChat.setLocale('lv')` — switch UI language at runtime and PATCH conversation locale (server uses it for system messages)
+  - Note: the “joined” bubble is rendered client‑side from `supportLabel + joinedSuffix` and uses the widget’s current locale at the time of the event.
 
 Example (site‑wide load, SPA friendly):
 
@@ -203,7 +204,7 @@ All non‑chat “system” texts (welcome, waiting, reopen, unclaimed reminders
 Localization model:
 - Conversation stores `locale` (2‑letter). The server renders system messages using fallback: exact → 2‑letter → `default` → legacy.
 - Admin can edit per‑locale templates in “System messages”.
-- Agent closing messages can be set per locale in “Messages and auto responses”; fallback mirrors the same chain, with legacy `Agent.closingMessage` as ultimate default.
+- Closing messages are unified under key `closing_message` per locale (Persist ON, Telegram OFF recommended). Agent‑specific closing overrides are deprecated and UI removed.
 
 Per template flags:
 - WS banner (transient)

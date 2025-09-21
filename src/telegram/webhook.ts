@@ -85,19 +85,9 @@ export function telegramRouter(): Router {
             const tgId: number | undefined = cb.from?.id;
             await closeConversation(conversationId, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
             try {
-              const prisma = getPrisma();
-              const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
-              const closing = agent && agent.isActive && agent.closingMessage ? agent.closingMessage : 'Conversation closed. You can write to reopen.';
-              // First persist to transcript and broadcast to customer
-              try {
-                const { addMessage, getAssignedAgentName } = await import('../services/conversationService');
-                const msgRow = await addMessage(conversationId, 'OUTBOUND', closing);
-                let label: string | null = null; try { label = await getAssignedAgentName(conversationId); } catch {}
-                broadcastToConversation(conversationId, { direction: 'OUTBOUND', text: msgRow.text, agent: label || 'Support' });
-                try { broadcastToConversation(conversationId, { type: 'conversation_closed' }); } catch {}
-              } catch {}
-              // Then notify Telegram topic and close it
-              try { await sendAgentMessage(conversationId, closing); } catch {}
+              const { emitServiceMessage } = await import('../services/systemMessages');
+              await emitServiceMessage(conversationId, 'closing_message', {});
+              try { broadcastToConversation(conversationId, { type: 'conversation_closed' }); } catch {}
               try { await closeTopic(conversationId); } catch {}
             } catch {}
           }

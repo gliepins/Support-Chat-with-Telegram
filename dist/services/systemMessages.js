@@ -108,8 +108,25 @@ async function emitServiceMessage(conversationId, key, extraContext) {
     const ctxBase = await loadConversationContext(conversationId);
     const ctx = Object.assign({}, ctxBase, extraContext || {});
     // Try locale-specific template first
-    let tpl = await getTemplateOrDefault(key, ctx.locale || 'default');
-    if (!tpl.enabled)
+    let tpl = null;
+    if (key === 'closing_message') {
+        // Unified: use only system template by locale; agent-specific overrides are deprecated
+        const prisma = (0, client_1.getPrisma)();
+        try {
+            const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
+            const convLocale = String(conv?.locale || 'default');
+            const t = await getTemplateOrDefault('closing_message', convLocale);
+            tpl = t;
+        }
+        catch { }
+        if (!tpl) {
+            tpl = { enabled: true, text: 'Conversation closed. You can write to reopen.', toCustomerWs: false, toCustomerPersist: true, toTelegram: false, pinInTopic: false };
+        }
+    }
+    else {
+        tpl = await getTemplateOrDefault(key, ctx.locale || 'default');
+    }
+    if (!tpl || !tpl.enabled)
         return;
     const text = render(tpl.text, ctx);
     try {
@@ -176,6 +193,7 @@ async function seedDefaultMessageTemplates() {
         { key: 'unclaimed_reminder_5m', text: 'Reminder: Conversation unclaimed. Use Claim button or /claim.', enabled: true, toCustomerWs: false, toCustomerPersist: false, toTelegram: true, pinInTopic: false },
         { key: 'unclaimed_reminder_15m_pin', text: 'Reminder: Still unclaimed. Pinning for visibility.', enabled: true, toCustomerWs: false, toCustomerPersist: false, toTelegram: true, pinInTopic: true },
         { key: 'closed_history_note', text: 'Conversation closed. Start new?', enabled: true, toCustomerWs: true, toCustomerPersist: false, toTelegram: false, pinInTopic: false },
+        { key: 'closing_default', text: 'Conversation closed. You can write to reopen.', enabled: true, toCustomerWs: false, toCustomerPersist: false, toTelegram: false, pinInTopic: false },
     ];
     for (const d of defaults) {
         try {
