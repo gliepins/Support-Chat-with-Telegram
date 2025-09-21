@@ -160,6 +160,7 @@ export async function seedDefaultMessageTemplates(): Promise<void> {
     { key: 'unclaimed_reminder_5m', text: 'Reminder: Conversation unclaimed. Use Claim button or /claim.', enabled: true, toCustomerWs: false, toCustomerPersist: false, toTelegram: true, pinInTopic: false },
     { key: 'unclaimed_reminder_15m_pin', text: 'Reminder: Still unclaimed. Pinning for visibility.', enabled: true, toCustomerWs: false, toCustomerPersist: false, toTelegram: true, pinInTopic: true },
     { key: 'closed_history_note', text: 'Conversation closed. Start new?', enabled: true, toCustomerWs: true, toCustomerPersist: false, toTelegram: false, pinInTopic: false },
+    { key: 'closing_default', text: 'Conversation closed. You can write to reopen.', enabled: true, toCustomerWs: false, toCustomerPersist: false, toTelegram: false, pinInTopic: false },
   ];
   for (const d of defaults) {
     try {

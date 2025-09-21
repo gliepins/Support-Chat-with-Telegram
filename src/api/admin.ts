@@ -85,7 +85,8 @@ router.post('/v1/moderation/close', async (req, res) => {
     // Post closing message like Telegram /close, with locale-aware fallback
     const updated = await prisma.conversation.findUnique({ where: { id } });
     const convLocale = String((updated as any)?.locale || 'default');
-    let closing = 'Conversation closed. You can write to reopen.';
+    // Prefer per-agent localized closing message, else system template closing_default by locale
+    let closing: string | null = null;
     try {
       if (updated?.assignedAgentTgId) {
         const { getClosingMessageForAgentLocale } = await import('../services/agentService');
@@ -100,6 +101,18 @@ router.post('/v1/moderation/close', async (req, res) => {
         }
       }
     } catch {}
+    if (!closing) {
+      try {
+        const { getTemplateOrDefault } = await import('../services/systemMessages');
+        const tpl = await getTemplateOrDefault('closing_default', convLocale);
+        if (tpl.enabled && tpl.text && tpl.text.trim()) {
+          closing = tpl.text.trim();
+        }
+      } catch {}
+    }
+    if (!closing) {
+      closing = 'Conversation closed. You can write to reopen.';
+    }
     try {
       const { addMessage, getAssignedAgentName } = await import('../services/conversationService');
       const msg = await addMessage(id, 'OUTBOUND', closing);
