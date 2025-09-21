@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import './config/env';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -6,6 +6,7 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import http from 'http';
 import publicRoutes from './api/public';
+import { getWsMetrics } from './ws/hub';
 import adminRoutes from './api/admin';
 import { attachWsServer } from './ws/server';
 import { telegramRouter } from './telegram/webhook';
@@ -25,6 +26,22 @@ app.use(helmet());
 app.use(pinoHttp({ logger }));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/ready', async (_req, res) => {
+  try {
+    const required = ['DATABASE_URL', 'SERVICE_TOKEN', 'BOT_TOKEN', 'SUPPORT_GROUP_ID', 'WEBHOOK_SECRET'];
+    const missing = required.filter((k) => !(process.env as any)[k] || String((process.env as any)[k]).trim()==='');
+    if (missing.length > 0) {
+      return res.status(503).json({ ready: false, missing });
+    }
+    const { getPrisma } = await import('./db/client');
+    const prisma = getPrisma();
+    // simple query to validate DB connectivity
+    await prisma.$queryRaw`SELECT 1`;
+    return res.json({ ready: true });
+  } catch {
+    return res.status(503).json({ ready: false });
+  }
+});
 // Quiet favicon to avoid 401/404 noise in admin
 app.get('/favicon.ico', (_req, res) => {
   res.status(204).end();
@@ -38,10 +55,15 @@ app.get('/metrics', async (_req, res) => {
       prisma.conversation.count({ where: { status: 'CLOSED' } }),
       prisma.conversation.count({ where: { status: 'BLOCKED' } }),
     ]);
+    const ws = getWsMetrics();
+    const tgErrors = (globalThis as any).__telegram_errors__ || 0;
     res.type('text/plain').send(
       `support_open ${open}\n` +
       `support_closed ${closed}\n` +
-      `support_blocked ${blocked}\n`
+      `support_blocked ${blocked}\n` +
+      `ws_connections ${ws.wsConnections}\n` +
+      `ws_outbound_messages ${ws.wsMessagesOutbound}\n` +
+      `telegram_errors_total ${tgErrors}\n`
     );
   } catch {
     res.status(500).type('text/plain').send('error');

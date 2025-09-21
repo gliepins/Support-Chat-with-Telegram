@@ -4,7 +4,7 @@ export declare function validateCustomerName(name: string): {
     ok: false;
     reason: string;
 };
-export declare function createConversation(initialName?: string): Promise<{
+export declare function createConversation(initialName?: string, initialLocale?: string): Promise<{
     id: string;
     codename: string;
     customerName: string | null;
@@ -16,6 +16,7 @@ export declare function createConversation(initialName?: string): Promise<{
     lastAgentAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    locale: string;
 }>;
 export declare function setNickname(conversationId: string, name: string): Promise<{
     id: string;
@@ -29,6 +30,7 @@ export declare function setNickname(conversationId: string, name: string): Promi
     lastAgentAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    locale: string;
 }>;
 export declare function listConversations(status?: string, q?: string): Promise<{
     assignedAgentTgId: string | null;
@@ -42,6 +44,7 @@ export declare function listConversations(status?: string, q?: string): Promise<
     lastAgentAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    locale: string;
 }[]>;
 export declare function getConversationWithMessages(conversationId: string): Promise<({
     messages: {
@@ -63,6 +66,7 @@ export declare function getConversationWithMessages(conversationId: string): Pro
     lastAgentAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    locale: string;
 }) | null>;
 export declare function listMessagesForConversation(conversationId: string): Promise<{
     createdAt: Date;
@@ -91,6 +95,7 @@ export declare function closeConversation(conversationId: string, actor: string,
     lastAgentAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    locale: string;
 }>;
 export declare function blockConversation(conversationId: string, actor: string): Promise<{
     id: string;
@@ -104,6 +109,7 @@ export declare function blockConversation(conversationId: string, actor: string)
     lastAgentAt: Date;
     createdAt: Date;
     updatedAt: Date;
+    locale: string;
 }>;
 export declare function recordAudit(conversationId: string, actor: string, action: string, meta: unknown): Promise<void>;
 //# sourceMappingURL=conversationService.d.ts.map

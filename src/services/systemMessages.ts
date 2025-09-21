@@ -10,6 +10,7 @@ type EmitContext = {
   agentName?: string | null;
   customerName?: string | null;
   codename?: string | null;
+  locale?: string | null;
   [k: string]: unknown;
 };
 
@@ -29,10 +30,10 @@ async function loadConversationContext(conversationId: string): Promise<EmitCont
   const conv = await prisma.conversation.findUnique({ where: { id: conversationId } });
   let agentName: string | null = null;
   try { agentName = await getAssignedAgentName(conversationId); } catch {}
-  return { customerName: conv?.customerName ?? null, codename: conv?.codename ?? null, agentName };
+  return { customerName: conv?.customerName ?? null, codename: conv?.codename ?? null, agentName, locale: (conv as any)?.locale ?? 'default' };
 }
 
-export async function getTemplateOrDefault(key: string): Promise<{
+export async function getTemplateOrDefault(key: string, locale?: string): Promise<{
   enabled: boolean;
   text: string;
   toCustomerWs: boolean;
@@ -43,7 +44,12 @@ export async function getTemplateOrDefault(key: string): Promise<{
 }> {
   const prisma = getPrisma();
   try {
-    const row = await (prisma as any).messageTemplate.findUnique({ where: { key } });
+    // Prefer requested locale, fallback to default then legacy
+    const desired = (locale && String(locale).trim()) ? String(locale).trim() : 'default';
+    const lc2 = desired.toLowerCase().slice(0,2);
+    let row = await (prisma as any).messageTemplateLocale.findFirst({ where: { key, locale: desired } });
+    if (!row) row = await (prisma as any).messageTemplateLocale.findFirst({ where: { key, locale: lc2 } });
+    if (!row) row = await (prisma as any).messageTemplateLocale.findFirst({ where: { key, locale: 'default' } });
     if (row) {
       return {
         enabled: !!row.enabled,
@@ -53,6 +59,19 @@ export async function getTemplateOrDefault(key: string): Promise<{
         toTelegram: !!row.toTelegram,
         pinInTopic: !!row.pinInTopic,
         rateLimitPerConvSec: row.rateLimitPerConvSec ?? null,
+      };
+    }
+    // Fallback to legacy table if locales not populated
+    const legacy = await (prisma as any).messageTemplate.findUnique({ where: { key } });
+    if (legacy) {
+      return {
+        enabled: !!legacy.enabled,
+        text: String(legacy.text || ''),
+        toCustomerWs: !!legacy.toCustomerWs,
+        toCustomerPersist: !!legacy.toCustomerPersist,
+        toTelegram: !!legacy.toTelegram,
+        pinInTopic: !!legacy.pinInTopic,
+        rateLimitPerConvSec: legacy.rateLimitPerConvSec ?? null,
       };
     }
   } catch (e) {
@@ -92,7 +111,8 @@ export async function getTemplateOrDefault(key: string): Promise<{
 export async function emitServiceMessage(conversationId: string, key: string, extraContext?: EmitContext): Promise<void> {
   const ctxBase = await loadConversationContext(conversationId);
   const ctx = Object.assign({}, ctxBase, extraContext || {});
-  const tpl = await getTemplateOrDefault(key);
+  // Try locale-specific template first
+  let tpl = await getTemplateOrDefault(key, (ctx.locale as string) || 'default');
   if (!tpl.enabled) return;
   const text = render(tpl.text, ctx);
   try { logger.info({ event: 'system_msg_eval', key, flags: { ws: tpl.toCustomerWs, persist: tpl.toCustomerPersist, telegram: tpl.toTelegram, pin: tpl.pinInTopic }, rate: tpl.rateLimitPerConvSec }); } catch {}

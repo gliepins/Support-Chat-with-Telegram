@@ -221,9 +221,17 @@ async function handleTelegramUpdate(update) {
         await (0, conversationService_1.closeConversation)(conversation.id, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
         try {
             const prisma = (0, client_1.getPrisma)();
-            const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
-            const closing = agent?.closingMessage && agent.isActive ? agent.closingMessage : null;
-            const closingText = closing || 'Conversation closed. You can write to reopen.';
+            const updated = await prisma.conversation.findUnique({ where: { id: conversation.id } });
+            const convLocale = String(updated?.locale || 'default');
+            let closingText = null;
+            if (tgId) {
+                try {
+                    closingText = await (0, agentService_1.getClosingMessageForAgentLocale)(BigInt(tgId), convLocale);
+                }
+                catch { }
+            }
+            if (!closingText)
+                closingText = 'Conversation closed. You can write to reopen.';
             // First persist to customer transcript and broadcast
             const created = await (0, conversationService_1.addMessage)(conversation.id, 'OUTBOUND', closingText);
             let label = null;

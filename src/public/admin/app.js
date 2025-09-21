@@ -158,10 +158,44 @@
   const messagesStatus = document.getElementById('messagesStatus');
   const closingList = document.getElementById('closingList');
   function setMessagesStatus(msg){ messagesStatus.textContent = msg; setTimeout(()=>{ messagesStatus.textContent=''; }, 1500) }
+  // Locale tabs for closing messages
+  const closingTabsWrap = document.createElement('div'); closingTabsWrap.style.margin='6px 0'; closingTabsWrap.innerHTML = '<div>Locales: <span id="closingTabs"></span> <button id="addClosingLocale" style="margin-left:8px">Add locale</button> <button id="delClosingLocale" style="margin-left:8px">Delete locale</button></div>';
+  document.querySelector('main .grid > div').appendChild(closingTabsWrap);
+  const closingTabs = closingTabsWrap.querySelector('#closingTabs'); const addClosingLocaleBtn = closingTabsWrap.querySelector('#addClosingLocale'); const delClosingLocaleBtn = closingTabsWrap.querySelector('#delClosingLocale');
+  let closingLocale = localStorage.getItem('admin:closingLocale') || 'default';
+  function renderClosingTabs(locales){
+    // reuse styles
+    if (!document.getElementById('sc-admin-tab-styles')) {
+      const st = document.createElement('style'); st.id='sc-admin-tab-styles'; st.textContent = '.sc-tab{display:inline-block;margin-right:8px;padding:6px 10px;border:1px solid #d1d5db;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;background:#f9fafb;cursor:pointer} .sc-tab[aria-selected="true"]{background:#ffffff;border-bottom-color:#2563eb;color:#111827;font-weight:600}'; document.head.appendChild(st);
+    }
+    closingTabs.innerHTML='';
+    (locales||['default']).forEach((loc)=>{ const b=document.createElement('button'); b.type='button'; b.className='sc-tab'; b.textContent=loc; b.setAttribute('aria-selected', String(loc===closingLocale)); b.onclick=(e)=>{ e.preventDefault(); closingLocale=loc; localStorage.setItem('admin:closingLocale', loc); populateClosingAgents(); }; closingTabs.appendChild(b); });
+    try{ const active = closingTabs.querySelector('button[aria-selected="true"]'); if(active) active.focus(); }catch(_){ }
+    delClosingLocaleBtn.style.display = (closingLocale==='default') ? 'none' : '';
+  }
+  addClosingLocaleBtn.onclick = async()=>{
+    // Inline locale create: copy default values for existing agents (empty if none)
+    const loc = prompt('Enter locale code (e.g., en, lv, de):',''); if(!loc) return;
+    try{
+      const all = await fetchJSON(origin + '/v1/admin/agents');
+      const closing = await fetchJSON(origin + '/v1/admin/agents/closing-messages');
+      const byTg = new Map(closing.filter(c=> (c.locale||'default')==='default' && c.message).map(c=> [String(c.tgId), c.message]));
+      for(const a of all){ const msg = byTg.get(String(a.tgId)) || ''; await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: msg, locale: loc }); }
+      localStorage.setItem('admin:closingLocale', loc); closingLocale = loc; setMessagesStatus('Locale added'); populateClosingAgents();
+    }catch{ setMessagesStatus('Failed'); }
+  };
+  delClosingLocaleBtn.onclick = async()=>{
+    if (closingLocale==='default') return; if(!confirm('Delete all closing messages for locale '+closingLocale+'?')) return;
+    try{ const list = await fetchJSON(origin + '/v1/admin/agents'); for(const a of list){ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: '', locale: closingLocale }); } localStorage.setItem('admin:closingLocale','default'); closingLocale='default'; setMessagesStatus('Deleted'); populateClosingAgents(); }catch{ setMessagesStatus('Failed'); }
+  };
 
   async function populateClosingAgents(){
     try{
       const list = await fetchJSON(origin + '/v1/admin/agents');
+      const closings = await fetchJSON(origin + '/v1/admin/agents/closing-messages');
+      const locales = Array.from(new Set(closings.map(c=>c.locale||'default')));
+      if (!locales.includes('default')) locales.unshift('default');
+      renderClosingTabs(locales);
       closingAgent.innerHTML = '';
       closingList.innerHTML = '';
       for(const a of list){
@@ -169,14 +203,15 @@
         opt.value = a.tgId; opt.textContent = `${a.displayName} (${a.tgId})`;
         closingAgent.appendChild(opt);
         const tr=document.createElement('tr');
-        const msg = (a.closingMessage||'').toString();
-        tr.innerHTML = `<td><input type=\"checkbox\" class=\"closingSel\" data-id=\"${a.tgId}\"></td><td>${a.displayName} (${a.tgId})</td><td>${msg?msg:'—'}</td>`;
+        const map = new Map(closings.filter(c=> String(c.tgId)===String(a.tgId)).map(c=> [c.locale||'default', c.message||'']));
+        const msg = (map.get(closingLocale) || map.get('default') || '').toString();
+        tr.innerHTML = `<td><input type="checkbox" class="closingSel" data-id="${a.tgId}"></td><td>${a.displayName} (${a.tgId})</td><td>${msg?msg:'—'}</td>`;
         const td = document.createElement('td');
         const edit = document.createElement('button'); edit.textContent='Edit'; edit.onclick=()=>{ closingAgent.value = a.tgId; closingText.value = msg; };
         const del = document.createElement('button'); del.textContent='Delete'; del.style.marginLeft='6px'; del.onclick=async()=>{
           // inline confirmation
           if(!del.dataset.step){ del.dataset.step='confirm'; del.textContent='Confirm'; del.style.background='#dc2626'; del.style.color='#fff'; setTimeout(()=>{ del.dataset.step=''; del.textContent='Delete'; del.style=''; }, 3000); return; }
-          try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: '' }); populateClosingAgents(); }catch{}
+          try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: a.tgId, message: '', locale: closingLocale }); populateClosingAgents(); }catch{}
         };
         td.append(edit, del); tr.appendChild(td);
         closingList.appendChild(tr);
@@ -185,7 +220,7 @@
   }
   saveClosing.onclick = async ()=>{
     const tgId = closingAgent.value; const msg = (closingText.value||'').trim(); if(!tgId){ setMessagesStatus('Select agent'); return; }
-    try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId, message: msg }); setMessagesStatus('Saved'); closingText.value=''; populateClosingAgents(); }
+    try{ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId, message: msg, locale: closingLocale }); setMessagesStatus('Saved'); closingText.value=''; populateClosingAgents(); }
     catch{ setMessagesStatus('Failed'); }
   };
   closingSelectAll.onclick = () => { const checked = closingSelectAll.checked; closingList.querySelectorAll('.closingSel').forEach(c=>{ c.checked = checked; }); };
@@ -195,7 +230,7 @@
     // inline confirm on the bulk button
     if(!closingBulkDelete.dataset.step){ closingBulkDelete.dataset.step='confirm'; closingBulkDelete.textContent='Confirm Delete'; setTimeout(()=>{ closingBulkDelete.dataset.step=''; closingBulkDelete.textContent='Delete Selected'; }, 3000); return; }
     try{
-      for(const id of ids){ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: id, message: '' }); }
+      for(const id of ids){ await postJSON(origin + '/v1/admin/agents/closing-message', { tgId: id, message: '', locale: closingLocale }); }
       closingBulkDelete.dataset.step=''; closingBulkDelete.textContent='Delete Selected';
       populateClosingAgents(); setMessagesStatus('Deleted');
     }catch{ setMessagesStatus('Failed'); }
@@ -204,14 +239,49 @@
   // Message templates (simple editor)
   const templatesTable = document.createElement('div');
   templatesTable.className = 'card';
-  templatesTable.innerHTML = '<div class="flex" style="justify-content:space-between"><div>System messages</div><div id="tmplStatus" style="opacity:.8"></div></div><div id="tmplWrap"></div>';
+  templatesTable.innerHTML = '<div class="flex" style="justify-content:space-between"><div>System messages</div><div id="tmplStatus" style="opacity:.8"></div></div>' +
+    '<div style="margin:6px 0">Locales: <span id="tmplTabs"></span> <button id="addLocaleBtn" style="margin-left:8px">Add locale</button></div>' +
+    '<div id="tmplWrap"></div>';
   document.querySelector('main .grid > div').appendChild(templatesTable);
   const tmplStatus = templatesTable.querySelector('#tmplStatus');
+  const tmplTabs = templatesTable.querySelector('#tmplTabs');
+  const addLocaleBtn = templatesTable.querySelector('#addLocaleBtn');
   function setTmplStatus(msg){ tmplStatus.textContent = msg; setTimeout(()=>{ tmplStatus.textContent=''; }, 1500) }
+  let currentLocale = localStorage.getItem('admin:tmplLocale') || 'default';
+  async function refreshTabs(locales){
+    // Simple inline styles to make buttons look like tabs
+    if (!document.getElementById('sc-admin-tab-styles')) {
+      const st = document.createElement('style'); st.id='sc-admin-tab-styles';
+      st.textContent = '.sc-tab{display:inline-block;margin-right:8px;padding:6px 10px;border:1px solid #d1d5db;border-bottom:2px solid transparent;border-radius:6px 6px 0 0;background:#f9fafb;cursor:pointer} .sc-tab[aria-selected="true"]{background:#ffffff;border-bottom-color:#2563eb;color:#111827;font-weight:600}';
+      document.head.appendChild(st);
+    }
+    tmplTabs.innerHTML='';
+    (locales||['default']).forEach((loc)=>{
+      const btn=document.createElement('button'); btn.type='button'; btn.className='sc-tab'; btn.textContent=loc; btn.setAttribute('role','tab');
+      btn.setAttribute('aria-selected', String(loc===currentLocale));
+      btn.onclick=(e)=>{ e.preventDefault(); e.stopPropagation(); currentLocale=loc; localStorage.setItem('admin:tmplLocale', loc); loadTemplates(); };
+      tmplTabs.appendChild(btn);
+    });
+    // keep focus on active tab
+    try{ const active = tmplTabs.querySelector('button[aria-selected="true"]'); if(active) active.focus(); }catch(_){ }
+  }
   async function loadTemplates(){
     const wrap = templatesTable.querySelector('#tmplWrap'); wrap.innerHTML = '';
+    const y = window.scrollY || 0;
     try{
-      const list = await fetchJSON(origin + '/v1/admin/message-templates');
+      const all = await fetchJSON(origin + '/v1/admin/message-templates');
+      const locales = Array.from(new Set((all||[]).map(r=>r.locale||'default')));
+      if (!locales.includes('default')) locales.unshift('default');
+      await refreshTabs(locales);
+      // Add delete-locale button when not default
+      let del = templatesTable.querySelector('#delLocaleBtn');
+      if (currentLocale !== 'default') {
+        if (!del) {
+          del = document.createElement('button'); del.id='delLocaleBtn'; del.textContent='Delete locale'; del.style.marginLeft='8px'; tmplTabs.after(del);
+          del.onclick = async()=>{ if(!confirm('Delete all templates for locale '+currentLocale+'?')) return; try{ await postJSON(origin + '/v1/admin/message-templates/delete-locale', { locale: currentLocale }); localStorage.setItem('admin:tmplLocale','default'); currentLocale='default'; setTmplStatus('Deleted'); loadTemplates(); }catch{ setTmplStatus('Failed'); } };
+        }
+      } else { if (del) del.remove(); }
+      const list = (all||[]).filter(r=> (r.locale||'default') === currentLocale);
       const table = document.createElement('table'); table.className='table';
       table.innerHTML = '<thead><tr><th>Key</th><th>Enabled</th><th style="width:44%">Text</th><th>WS</th><th>Persist</th><th>Telegram</th><th>Pin</th><th>Rate(s)</th><th>Save</th></tr></thead><tbody></tbody>';
       const tbody = table.querySelector('tbody');
@@ -236,7 +306,9 @@
               toTelegram: !!cTg.checked,
               pinInTopic: !!cPin.checked,
               rateLimitPerConvSec: inpRate.value ? parseInt(inpRate.value,10) : null,
-            }); setTmplStatus('Saved');
+              locale: currentLocale,
+            }); setTmplStatus('Saved'); // reload to reflect persisted values and keep locale sticky
+            setTimeout(()=>{ loadTemplates(); }, 300);
           }catch{ setTmplStatus('Failed'); }
           finally{ btnSave.disabled=false; }
         }; tdSave.appendChild(btnSave); tr.appendChild(tdSave);
@@ -244,7 +316,45 @@
       });
       wrap.appendChild(table);
     }catch{ wrap.textContent = 'Failed to load templates'; }
+    // restore scroll to avoid jump
+    try{ window.scrollTo(0, y); }catch(_){ }
   }
+  addLocaleBtn.onclick = async()=>{
+    // Inline add-locale UI
+    const parent = templatesTable;
+    let box = parent.querySelector('#addLocaleBox');
+    if (!box) {
+      box = document.createElement('div'); box.id='addLocaleBox'; box.style.margin='6px 0';
+      box.innerHTML = '<input id="newLocaleInp" placeholder="e.g., en, lv, de" style="width:140px"> <button id="newLocaleCreate">Create</button> <span id="newLocaleStatus" style="margin-left:8px;opacity:.8"></span>';
+      addLocaleBtn.after(box);
+      const inp = box.querySelector('#newLocaleInp'); const btn = box.querySelector('#newLocaleCreate'); const status = box.querySelector('#newLocaleStatus');
+      btn.onclick = async ()=>{
+        const loc = (inp.value||'').trim(); if(!loc){ status.textContent='Enter code'; setTimeout(()=>status.textContent='',1200); return; }
+        try{
+          // Fetch existing templates and copy from default
+          const all = await fetchJSON(origin + '/v1/admin/message-templates');
+          const defaults = (all||[]).filter(r=> (r.locale||'default')==='default');
+          for(const t of defaults){
+            await postJSON(origin + '/v1/admin/message-templates/upsert', {
+              key: t.key,
+              enabled: !!t.enabled,
+              text: t.text||'',
+              toCustomerWs: !!t.toCustomerWs,
+              toCustomerPersist: !!t.toCustomerPersist,
+              toTelegram: !!t.toTelegram,
+              pinInTopic: !!t.pinInTopic,
+              rateLimitPerConvSec: t.rateLimitPerConvSec==null?null:Number(t.rateLimitPerConvSec),
+              locale: loc,
+            });
+          }
+          localStorage.setItem('admin:tmplLocale', loc); currentLocale = loc; status.textContent='Created'; setTimeout(()=>status.textContent='',1200);
+          loadTemplates();
+        }catch{ status.textContent='Failed'; setTimeout(()=>status.textContent='',1200); }
+      };
+    } else {
+      box.remove();
+    }
+  };
   // load on init
 
   statusSel.onchange = loadConversations;

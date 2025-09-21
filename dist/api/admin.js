@@ -124,10 +124,28 @@ router.post('/v1/moderation/close', async (req, res) => {
     const prisma = (0, client_1.getPrisma)();
     const conv = await (0, conversationService_1.closeConversation)(id, 'system', { suppressCustomerNote: true });
     try {
-        // Post closing message like Telegram /close
+        // Post closing message like Telegram /close, with locale-aware fallback
         const updated = await prisma.conversation.findUnique({ where: { id } });
-        const agent = updated?.assignedAgentTgId ? await prisma.agent.findUnique({ where: { tgId: updated.assignedAgentTgId } }) : null;
-        const closing = agent && agent.isActive && agent.closingMessage ? agent.closingMessage : 'Conversation closed. You can write to reopen.';
+        const convLocale = String(updated?.locale || 'default');
+        let closing = 'Conversation closed. You can write to reopen.';
+        try {
+            if (updated?.assignedAgentTgId) {
+                const { getClosingMessageForAgentLocale } = await Promise.resolve().then(() => __importStar(require('../services/agentService')));
+                const msg = await getClosingMessageForAgentLocale(updated.assignedAgentTgId, convLocale);
+                if (msg && msg.trim())
+                    closing = msg;
+            }
+            else {
+                const agent = await prisma.agent.findFirst({ where: { isActive: true }, orderBy: { updatedAt: 'desc' } });
+                if (agent && agent.tgId) {
+                    const { getClosingMessageForAgentLocale } = await Promise.resolve().then(() => __importStar(require('../services/agentService')));
+                    const msg = await getClosingMessageForAgentLocale(agent.tgId, convLocale);
+                    if (msg && msg.trim())
+                        closing = msg;
+                }
+            }
+        }
+        catch { }
         try {
             const { addMessage, getAssignedAgentName } = await Promise.resolve().then(() => __importStar(require('../services/conversationService')));
             const msg = await addMessage(id, 'OUTBOUND', closing);
@@ -233,18 +251,52 @@ router.post('/v1/admin/agents/enable', async (req, res) => {
     return res.json({ tgId: result.tgId.toString(), isActive: result.isActive });
 });
 router.post('/v1/admin/agents/closing-message', async (req, res) => {
-    const { tgId, message } = (req.body || {});
+    const { tgId, message, locale } = (req.body || {});
     if (!tgId || typeof message !== 'string')
         return res.status(400).json({ error: 'tgId and message required' });
-    const result = await (0, agentService_1.setAgentClosingMessage)(BigInt(tgId), message);
-    return res.json({ tgId: result.tgId.toString(), closingMessage: result.closingMessage || null });
+    const prisma = (0, client_1.getPrisma)();
+    const loc = (locale && locale.trim()) ? locale.trim() : 'default';
+    if (loc === 'default') {
+        // maintain legacy default on Agent table
+        const result = await (0, agentService_1.setAgentClosingMessage)(BigInt(tgId), message);
+        return res.json({ tgId: result.tgId.toString(), closingMessage: result.closingMessage || null, locale: loc });
+    }
+    const row = await prisma.agentClosingMessage.upsert({
+        where: { tgId_locale: { tgId: BigInt(tgId), locale: loc } },
+        create: { tgId: BigInt(tgId), locale: loc, message },
+        update: { message },
+    });
+    return res.json({ tgId: row.tgId.toString(), closingMessage: row.message || null, locale: row.locale });
+});
+router.get('/v1/admin/agents/closing-messages', async (req, res) => {
+    const prisma = (0, client_1.getPrisma)();
+    try {
+        const rows = await prisma.agentClosingMessage.findMany({});
+        const legacy = await prisma.agent.findMany({ select: { tgId: true, closingMessage: true } });
+        // Map legacy to default entries when not overridden
+        const seen = new Set(rows.map((r) => `${String(r.tgId)}::${r.locale || 'default'}`));
+        const def = legacy
+            .filter(a => a.closingMessage && !seen.has(`${String(a.tgId)}::default`))
+            .map(a => ({ tgId: a.tgId, locale: 'default', message: a.closingMessage }));
+        const all = [...rows, ...def].map((r) => ({ tgId: String(r.tgId), locale: r.locale || 'default', message: r.message || '' }));
+        return res.json(all);
+    }
+    catch (e) {
+        return res.status(500).json({ error: 'internal_error' });
+    }
 });
 // Message templates admin
 router.get('/v1/admin/message-templates', async (_req, res) => {
     const prisma = (0, client_1.getPrisma)();
     try {
-        const rows = await prisma.messageTemplate.findMany({ orderBy: { key: 'asc' } });
-        return res.json(rows);
+        const locales = await prisma.messageTemplateLocale.findMany({ orderBy: [{ locale: 'asc' }, { key: 'asc' }] });
+        const legacy = await prisma.messageTemplate.findMany({ orderBy: { key: 'asc' } });
+        // Map legacy to default locale if not overridden
+        const seen = new Set(locales.map((r) => `${r.key}::${r.locale || 'default'}`));
+        const legacyAsDefault = legacy
+            .filter((r) => !seen.has(`${r.key}::default`))
+            .map((r) => ({ ...r, locale: 'default' }));
+        return res.json([...locales, ...legacyAsDefault]);
     }
     catch (e) {
         return res.status(500).json({ error: 'internal_error' });
@@ -256,7 +308,7 @@ router.post('/v1/admin/message-templates/upsert', async (req, res) => {
         return res.status(400).json({ error: 'key and text required' });
     const prisma = (0, client_1.getPrisma)();
     try {
-        const data = {
+        const base = {
             key: String(body.key),
             enabled: typeof body.enabled === 'boolean' ? body.enabled : true,
             text: String(body.text),
@@ -265,10 +317,39 @@ router.post('/v1/admin/message-templates/upsert', async (req, res) => {
             toTelegram: !!body.toTelegram,
             pinInTopic: !!body.pinInTopic,
             rateLimitPerConvSec: body.rateLimitPerConvSec == null ? null : Number(body.rateLimitPerConvSec),
-            locale: body.locale ? String(body.locale) : 'default',
         };
-        const row = await prisma.messageTemplate.upsert({ where: { key: data.key }, create: data, update: data });
-        return res.json(row);
+        const locale = body.locale ? String(body.locale) : 'default';
+        // Store localized templates in MessageTemplateLocale; keep legacy table for backward compat
+        if (locale && locale !== 'legacy') {
+            const row = await prisma.messageTemplateLocale.upsert({
+                where: { key_locale: { key: base.key, locale } },
+                create: { ...base, locale },
+                update: { ...base, locale },
+            });
+            return res.json(row);
+        }
+        else {
+            const row = await prisma.messageTemplate.upsert({ where: { key: base.key }, create: { ...base, locale: 'default' }, update: { ...base, locale: 'default' } });
+            return res.json(row);
+        }
+    }
+    catch (e) {
+        return res.status(500).json({ error: 'internal_error' });
+    }
+});
+// Delete an entire locale (all keys for that locale)
+router.post('/v1/admin/message-templates/delete-locale', async (req, res) => {
+    const { locale } = (req.body || {});
+    if (!locale || typeof locale !== 'string' || !locale.trim()) {
+        return res.status(400).json({ error: 'locale required' });
+    }
+    if (locale.trim() === 'default') {
+        return res.status(400).json({ error: 'cannot delete default locale' });
+    }
+    const prisma = (0, client_1.getPrisma)();
+    try {
+        const r = await prisma.messageTemplateLocale.deleteMany({ where: { locale: locale.trim() } });
+        return res.json({ deleted: r.count });
     }
     catch (e) {
         return res.status(500).json({ error: 'internal_error' });

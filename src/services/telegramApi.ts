@@ -20,6 +20,10 @@ async function tgFetch(method: string, body: any): Promise<any> {
   const json = await res.json();
   if (!json.ok) {
     logger.warn({ method, body, json }, 'telegram api error');
+    try {
+      const g = globalThis as any;
+      g.__telegram_errors__ = (g.__telegram_errors__ || 0) + 1;
+    } catch {}
   }
   return json;
 }

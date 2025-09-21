@@ -80,9 +80,74 @@ function attachWsServer(httpServer, pathPrefix = '/v1/ws') {
         }
         catch { }
         (0, hub_1.addClientToConversation)(conversationId, ws);
+        // Simple per-connection token bucket: allow N messages per T seconds
+        const maxPoints = Number(process.env.WS_MSGS_PER_WINDOW || 30);
+        const windowMs = Number(process.env.WS_WINDOW_MS || 10000);
+        let tokens = maxPoints;
+        let lastRefill = Date.now();
+        function allowMessage() {
+            const now = Date.now();
+            const elapsed = now - lastRefill;
+            if (elapsed > windowMs) {
+                const buckets = Math.floor(elapsed / windowMs);
+                tokens = Math.min(maxPoints, tokens + buckets * maxPoints);
+                lastRefill = now - (elapsed % windowMs);
+            }
+            if (tokens > 0) {
+                tokens -= 1;
+                return true;
+            }
+            return false;
+        }
         ws.on('message', async (data) => {
             try {
+                // Inbound hardening: size and type
+                if (data && data.length && data.length > (Number(process.env.WS_MAX_MSG_BYTES || 4096))) {
+                    try {
+                        ws.send(JSON.stringify({ error: 'too_large' }));
+                    }
+                    catch { }
+                    try {
+                        ws.close(1009, 'too large');
+                    }
+                    catch { }
+                    return;
+                }
+                if (typeof data.toString !== 'function') {
+                    try {
+                        ws.close(1003, 'invalid');
+                    }
+                    catch { }
+                    ;
+                    return;
+                }
+                if (!allowMessage()) {
+                    try {
+                        ws.send(JSON.stringify({ error: 'rate_limited' }));
+                    }
+                    catch { }
+                    try {
+                        logger.warn({ event: 'ws_rate_limited', conversationId });
+                    }
+                    catch { }
+                    try {
+                        ws.close(1008, 'rate limit');
+                    }
+                    catch { }
+                    return;
+                }
                 const text = data.toString();
+                if (typeof text !== 'string' || text.length === 0) {
+                    return;
+                }
+                if (text.length > 4000) {
+                    try {
+                        ws.send(JSON.stringify({ error: 'message_too_long' }));
+                    }
+                    catch { }
+                    ;
+                    return;
+                }
                 await (0, conversationService_1.addMessage)(conversationId, 'INBOUND', text);
                 try {
                     await (0, telegramApi_1.ensureTopicForConversation)(conversationId);

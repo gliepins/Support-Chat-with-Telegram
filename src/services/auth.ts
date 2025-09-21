@@ -22,7 +22,10 @@ export function hashIp(ipAddress: string): string {
 
 export function signConversationToken(conversationId: string, ipHash: string, ttlSeconds = 60 * 60): string {
   const secret = getJwtSecret();
-  return jwt.sign({ sub: conversationId, ip: ipHash }, secret, { expiresIn: ttlSeconds });
+  const unbind = String(process.env.UNBIND_JWT_FROM_IP || '').toLowerCase() === 'true';
+  const payload: any = { sub: conversationId };
+  if (!unbind) payload.ip = ipHash;
+  return jwt.sign(payload, secret, { expiresIn: ttlSeconds });
 }
 
 export function verifyConversationToken(token: string, ipHash: string): { conversationId: string } {
@@ -30,6 +33,10 @@ export function verifyConversationToken(token: string, ipHash: string): { conver
   const payload = jwt.verify(token, secret) as any;
   if (!payload || typeof payload.sub !== 'string') {
     throw new Error('Invalid token payload');
+  }
+  const unbind = String(process.env.UNBIND_JWT_FROM_IP || '').toLowerCase() === 'true';
+  if (!unbind) {
+    // If bound, optionally compare ip in future; currently not enforced to avoid false negatives behind NAT
   }
   return { conversationId: payload.sub };
 }

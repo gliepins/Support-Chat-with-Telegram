@@ -21,6 +21,7 @@ model Conversation {
   lastAgentAt       DateTime @default(now())
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+  locale            String   @default("default")
   messages          Message[]
   auditLogs         AuditLog[]
 }
@@ -66,6 +67,17 @@ model Agent {
   updatedAt   DateTime @updatedAt
 }
 
+model AgentClosingMessage {
+  id        String  @id @default(cuid())
+  tgId      BigInt
+  locale    String  @default("default")
+  message   String? @db.Text
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tgId, locale])
+}
+
 model Setting {
   key       String   @id
   value     String   @db.Text
@@ -84,4 +96,21 @@ model MessageTemplate {
   locale               String   @default("default")
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+}
+
+model MessageTemplateLocale {
+  id                   String   @id @default(cuid())
+  key                  String
+  locale               String   @default("default")
+  enabled              Boolean  @default(true)
+  text                 String   @db.Text
+  toCustomerWs         Boolean  @default(false)
+  toCustomerPersist    Boolean  @default(false)
+  toTelegram           Boolean  @default(false)
+  pinInTopic           Boolean  @default(false)
+  rateLimitPerConvSec  Int?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([key, locale])
 }

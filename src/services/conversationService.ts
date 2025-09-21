@@ -20,24 +20,25 @@ export function validateCustomerName(name: string): { ok: true } | { ok: false; 
   return { ok: true };
 }
 
-export async function createConversation(initialName?: string) {
+export async function createConversation(initialName?: string, initialLocale?: string) {
   const prisma = getPrisma();
   const codename = generateCodename();
-  const conversation = await prisma.conversation.create({
-    data: {
-      codename,
-      status: 'OPEN_UNCLAIMED',
-      ...(initialName
-        ? (() => {
-            const validation = validateCustomerName(initialName);
-            if (!validation.ok) {
-              throw new Error(validation.reason);
-            }
-            return { customerName: initialName.trim() } as Prisma.ConversationCreateInput;
-          })()
-        : {}),
-    } as Prisma.ConversationCreateInput,
-  });
+  const normLocale = (function(){ try{ if(initialLocale && typeof initialLocale==='string' && initialLocale.trim()){ return initialLocale.trim().toLowerCase().slice(0,2); } }catch(_){} return undefined; })();
+  const data: Prisma.ConversationCreateInput = {
+    codename,
+    status: 'OPEN_UNCLAIMED',
+    ...(normLocale ? { locale: normLocale as any } : {}),
+    ...(initialName
+      ? (() => {
+          const validation = validateCustomerName(initialName);
+          if (!validation.ok) {
+            throw new Error(validation.reason);
+          }
+          return { customerName: initialName.trim() } as { customerName: string };
+        })()
+      : {}),
+  };
+  const conversation = await prisma.conversation.create({ data });
   // Proactively create the Telegram topic and post welcome (if configured)
   try {
     await ensureTopicForConversation(conversation.id);

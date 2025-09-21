@@ -1,7 +1,7 @@
 import pino from 'pino';
 import { getPrisma } from '../db/client';
 import { addMessage, closeConversation, recordAudit, getAssignedAgentName } from '../services/conversationService';
-import { getAgentNameByTgId } from '../services/agentService';
+import { getAgentNameByTgId, getClosingMessageForAgentLocale } from '../services/agentService';
 import { closeTopic, updateTopicTitleFromConversation, sendAgentMessage, sendGroupMessage } from '../services/telegramApi';
 import { broadcastToConversation } from '../ws/hub';
 import { Prisma } from '@prisma/client';
@@ -186,9 +186,13 @@ export async function handleTelegramUpdate(update: TgUpdate) {
     await closeConversation(conversation.id, `telegram:${tgId ?? 'unknown'}`, { suppressCustomerNote: true });
     try {
       const prisma = getPrisma();
-      const agent = tgId ? await prisma.agent.findUnique({ where: { tgId: BigInt(tgId) } }) : null;
-      const closing = agent?.closingMessage && agent.isActive ? agent.closingMessage : null;
-      const closingText = closing || 'Conversation closed. You can write to reopen.';
+      const updated = await prisma.conversation.findUnique({ where: { id: conversation.id } });
+      const convLocale = String((updated as any)?.locale || 'default');
+      let closingText: string | null = null;
+      if (tgId) {
+        try { closingText = await getClosingMessageForAgentLocale(BigInt(tgId), convLocale); } catch {}
+      }
+      if (!closingText) closingText = 'Conversation closed. You can write to reopen.';
       // First persist to customer transcript and broadcast
       const created = await addMessage(conversation.id, 'OUTBOUND', closingText);
       let label: string | null = null;

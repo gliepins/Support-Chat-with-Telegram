@@ -65,24 +65,30 @@ function validateCustomerName(name) {
     }
     return { ok: true };
 }
-async function createConversation(initialName) {
+async function createConversation(initialName, initialLocale) {
     const prisma = (0, client_1.getPrisma)();
     const codename = (0, codename_1.generateCodename)();
-    const conversation = await prisma.conversation.create({
-        data: {
-            codename,
-            status: 'OPEN_UNCLAIMED',
-            ...(initialName
-                ? (() => {
-                    const validation = validateCustomerName(initialName);
-                    if (!validation.ok) {
-                        throw new Error(validation.reason);
-                    }
-                    return { customerName: initialName.trim() };
-                })()
-                : {}),
-        },
-    });
+    const normLocale = (function () { try {
+        if (initialLocale && typeof initialLocale === 'string' && initialLocale.trim()) {
+            return initialLocale.trim().toLowerCase().slice(0, 2);
+        }
+    }
+    catch (_) { } return undefined; })();
+    const data = {
+        codename,
+        status: 'OPEN_UNCLAIMED',
+        ...(normLocale ? { locale: normLocale } : {}),
+        ...(initialName
+            ? (() => {
+                const validation = validateCustomerName(initialName);
+                if (!validation.ok) {
+                    throw new Error(validation.reason);
+                }
+                return { customerName: initialName.trim() };
+            })()
+            : {}),
+    };
+    const conversation = await prisma.conversation.create({ data });
     // Proactively create the Telegram topic and post welcome (if configured)
     try {
         await (0, telegramApi_1.ensureTopicForConversation)(conversation.id);

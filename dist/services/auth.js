@@ -26,13 +26,21 @@ function hashIp(ipAddress) {
 }
 function signConversationToken(conversationId, ipHash, ttlSeconds = 60 * 60) {
     const secret = getJwtSecret();
-    return jsonwebtoken_1.default.sign({ sub: conversationId, ip: ipHash }, secret, { expiresIn: ttlSeconds });
+    const unbind = String(process.env.UNBIND_JWT_FROM_IP || '').toLowerCase() === 'true';
+    const payload = { sub: conversationId };
+    if (!unbind)
+        payload.ip = ipHash;
+    return jsonwebtoken_1.default.sign(payload, secret, { expiresIn: ttlSeconds });
 }
 function verifyConversationToken(token, ipHash) {
     const secret = getJwtSecret();
     const payload = jsonwebtoken_1.default.verify(token, secret);
     if (!payload || typeof payload.sub !== 'string') {
         throw new Error('Invalid token payload');
+    }
+    const unbind = String(process.env.UNBIND_JWT_FROM_IP || '').toLowerCase() === 'true';
+    if (!unbind) {
+        // If bound, optionally compare ip in future; currently not enforced to avoid false negatives behind NAT
     }
     return { conversationId: payload.sub };
 }

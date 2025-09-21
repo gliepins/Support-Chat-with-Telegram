@@ -39,4 +39,5 @@ export declare function enableAgent(tgId: bigint): Promise<{
     isActive: boolean;
     closingMessage: string | null;
 }>;
+export declare function getClosingMessageForAgentLocale(tgId: bigint, locale?: string): Promise<string | null>;
 //# sourceMappingURL=agentService.d.ts.map

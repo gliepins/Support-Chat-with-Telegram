@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-require("dotenv/config");
+require("./config/env");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const helmet_1 = __importDefault(require("helmet"));
@@ -44,6 +44,7 @@ const pino_1 = __importDefault(require("pino"));
 const pino_http_1 = __importDefault(require("pino-http"));
 const http_1 = __importDefault(require("http"));
 const public_1 = __importDefault(require("./api/public"));
+const hub_1 = require("./ws/hub");
 const admin_1 = __importDefault(require("./api/admin"));
 const server_1 = require("./ws/server");
 const webhook_1 = require("./telegram/webhook");
@@ -60,6 +61,23 @@ app.use((0, cors_1.default)({ origin: true, credentials: false }));
 app.use((0, helmet_1.default)());
 app.use((0, pino_http_1.default)({ logger }));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.get('/ready', async (_req, res) => {
+    try {
+        const required = ['DATABASE_URL', 'SERVICE_TOKEN', 'BOT_TOKEN', 'SUPPORT_GROUP_ID', 'WEBHOOK_SECRET'];
+        const missing = required.filter((k) => !process.env[k] || String(process.env[k]).trim() === '');
+        if (missing.length > 0) {
+            return res.status(503).json({ ready: false, missing });
+        }
+        const { getPrisma } = await Promise.resolve().then(() => __importStar(require('./db/client')));
+        const prisma = getPrisma();
+        // simple query to validate DB connectivity
+        await prisma.$queryRaw `SELECT 1`;
+        return res.json({ ready: true });
+    }
+    catch {
+        return res.status(503).json({ ready: false });
+    }
+});
 // Quiet favicon to avoid 401/404 noise in admin
 app.get('/favicon.ico', (_req, res) => {
     res.status(204).end();
@@ -73,9 +91,14 @@ app.get('/metrics', async (_req, res) => {
             prisma.conversation.count({ where: { status: 'CLOSED' } }),
             prisma.conversation.count({ where: { status: 'BLOCKED' } }),
         ]);
+        const ws = (0, hub_1.getWsMetrics)();
+        const tgErrors = globalThis.__telegram_errors__ || 0;
         res.type('text/plain').send(`support_open ${open}\n` +
             `support_closed ${closed}\n` +
-            `support_blocked ${blocked}\n`);
+            `support_blocked ${blocked}\n` +
+            `ws_connections ${ws.wsConnections}\n` +
+            `ws_outbound_messages ${ws.wsMessagesOutbound}\n` +
+            `telegram_errors_total ${tgErrors}\n`);
     }
     catch {
         res.status(500).type('text/plain').send('error');

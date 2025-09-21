@@ -29,12 +29,19 @@ async function loadConversationContext(conversationId) {
         agentName = await (0, conversationService_1.getAssignedAgentName)(conversationId);
     }
     catch { }
-    return { customerName: conv?.customerName ?? null, codename: conv?.codename ?? null, agentName };
+    return { customerName: conv?.customerName ?? null, codename: conv?.codename ?? null, agentName, locale: conv?.locale ?? 'default' };
 }
-async function getTemplateOrDefault(key) {
+async function getTemplateOrDefault(key, locale) {
     const prisma = (0, client_1.getPrisma)();
     try {
-        const row = await prisma.messageTemplate.findUnique({ where: { key } });
+        // Prefer requested locale, fallback to default then legacy
+        const desired = (locale && String(locale).trim()) ? String(locale).trim() : 'default';
+        const lc2 = desired.toLowerCase().slice(0, 2);
+        let row = await prisma.messageTemplateLocale.findFirst({ where: { key, locale: desired } });
+        if (!row)
+            row = await prisma.messageTemplateLocale.findFirst({ where: { key, locale: lc2 } });
+        if (!row)
+            row = await prisma.messageTemplateLocale.findFirst({ where: { key, locale: 'default' } });
         if (row) {
             return {
                 enabled: !!row.enabled,
@@ -44,6 +51,19 @@ async function getTemplateOrDefault(key) {
                 toTelegram: !!row.toTelegram,
                 pinInTopic: !!row.pinInTopic,
                 rateLimitPerConvSec: row.rateLimitPerConvSec ?? null,
+            };
+        }
+        // Fallback to legacy table if locales not populated
+        const legacy = await prisma.messageTemplate.findUnique({ where: { key } });
+        if (legacy) {
+            return {
+                enabled: !!legacy.enabled,
+                text: String(legacy.text || ''),
+                toCustomerWs: !!legacy.toCustomerWs,
+                toCustomerPersist: !!legacy.toCustomerPersist,
+                toTelegram: !!legacy.toTelegram,
+                pinInTopic: !!legacy.pinInTopic,
+                rateLimitPerConvSec: legacy.rateLimitPerConvSec ?? null,
             };
         }
     }
@@ -87,7 +107,8 @@ async function getTemplateOrDefault(key) {
 async function emitServiceMessage(conversationId, key, extraContext) {
     const ctxBase = await loadConversationContext(conversationId);
     const ctx = Object.assign({}, ctxBase, extraContext || {});
-    const tpl = await getTemplateOrDefault(key);
+    // Try locale-specific template first
+    let tpl = await getTemplateOrDefault(key, ctx.locale || 'default');
     if (!tpl.enabled)
         return;
     const text = render(tpl.text, ctx);

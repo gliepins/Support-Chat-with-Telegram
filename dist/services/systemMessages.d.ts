@@ -2,9 +2,10 @@ type EmitContext = {
     agentName?: string | null;
     customerName?: string | null;
     codename?: string | null;
+    locale?: string | null;
     [k: string]: unknown;
 };
-export declare function getTemplateOrDefault(key: string): Promise<{
+export declare function getTemplateOrDefault(key: string, locale?: string): Promise<{
     enabled: boolean;
     text: string;
     toCustomerWs: boolean;

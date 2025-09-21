@@ -1,5 +1,8 @@
 import { WebSocket } from 'ws';
 
+let wsConnections = 0;
+let wsMessagesOutbound = 0;
+
 const conversationIdToClients = new Map<string, Set<WebSocket>>();
 
 export function addClientToConversation(conversationId: string, ws: WebSocket): void {
@@ -9,6 +12,7 @@ export function addClientToConversation(conversationId: string, ws: WebSocket): 
     conversationIdToClients.set(conversationId, set);
   }
   set.add(ws);
+  wsConnections += 1;
 }
 
 export function removeClientFromConversation(conversationId: string, ws: WebSocket): void {
@@ -18,6 +22,7 @@ export function removeClientFromConversation(conversationId: string, ws: WebSock
   if (set.size === 0) {
     conversationIdToClients.delete(conversationId);
   }
+  wsConnections = Math.max(0, wsConnections - 1);
 }
 
 export function broadcastToConversation(conversationId: string, payload: unknown): void {
@@ -28,11 +33,15 @@ export function broadcastToConversation(conversationId: string, payload: unknown
     if (client.readyState === WebSocket.OPEN) {
       try {
         client.send(data);
+        wsMessagesOutbound += 1;
       } catch {
         // ignore best-effort send
       }
     }
   }
+}
+export function getWsMetrics() {
+  return { wsConnections, wsMessagesOutbound };
 }
 
 
