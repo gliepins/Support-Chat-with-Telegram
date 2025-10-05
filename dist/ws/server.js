@@ -149,8 +149,8 @@ function attachWsServer(httpServer, pathPrefix = '/v1/ws') {
                     return;
                 }
                 await (0, conversationService_1.addMessage)(conversationId, 'INBOUND', text);
+                // Note: addMessage now handles topic creation and welcome message for first message
                 try {
-                    await (0, telegramApi_1.ensureTopicForConversation)(conversationId);
                     await (0, telegramApi_1.sendCustomerMessage)(conversationId, text);
                 }
                 catch { }

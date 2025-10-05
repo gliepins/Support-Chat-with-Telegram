@@ -6,42 +6,75 @@
     try{ var v=getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v||fallback; }catch(_){ return fallback }
   }
   function clamp01(x){ try{ var n=parseFloat(x); if(!isFinite(n)) return 0; return Math.max(0, Math.min(1, n)); }catch(_){ return 0 } }
-  var COLORS={
-    primary: cssVar('--color-primary-main', '#2563eb'),
-    primaryDark: cssVar('--color-primary-dark', '#1e40af'),
-    bgPaper: cssVar('--color-background-paper', '#ffffff'),
-    bgDefault: cssVar('--color-background-default', '#ffffff'),
-    textPrimary: cssVar('--color-text-primary', '#111827'),
-    textInverse: '#ffffff',
-    border: cssVar('--color-border-main', '#e5e7eb'),
-    muted: '#6b7280'
-  };
-  var STYLE='\n'
-    + '.scw-btn{position:fixed;right:16px;bottom:16px;background:'+COLORS.primary+';color:'+COLORS.textInverse+';border-radius:999px;padding:12px 16px;font:14px sans-serif;cursor:pointer;z-index:2147483000;box-shadow:0 8px 20px rgba(0,0,0,.15)}\n'
+  function isDarkTheme(){
+    try{
+      // Check for data-theme attribute
+      var html = document.documentElement;
+      if (html.getAttribute('data-theme') === 'dark') return true;
+      // Check for theme-dark class
+      if (html.classList.contains('theme-dark')) return true;
+      if (document.body && document.body.classList.contains('theme-dark')) return true;
+      // Check for dark color scheme via media query
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        // Only trust this if background is actually dark
+        var bg = getComputedStyle(document.body).backgroundColor;
+        if (bg) {
+          var rgb = bg.match(/\d+/g);
+          if (rgb && rgb.length >= 3) {
+            var brightness = (parseInt(rgb[0]) + parseInt(rgb[1]) + parseInt(rgb[2])) / 3;
+            if (brightness < 128) return true;
+          }
+        }
+      }
+    }catch(_){}
+    return false;
+  }
+  function getColors(dark){
+    return {
+      primary: cssVar('--color-primary-main', dark ? '#4A9EFF' : '#2563eb'),
+      primaryDark: cssVar('--color-primary-dark', dark ? '#66B2FF' : '#1e40af'),
+      bgPaper: cssVar('--color-background-paper', dark ? '#161B22' : '#ffffff'),
+      bgDefault: cssVar('--color-background-default', dark ? '#0D1117' : '#ffffff'),
+      textPrimary: cssVar('--color-text-primary', dark ? '#F0F6FC' : '#111827'),
+      textInverse: dark ? '#0D1117' : '#ffffff',
+      border: cssVar('--color-border-main', dark ? '#30363D' : '#e5e7eb'),
+      muted: dark ? '#8B949E' : '#6b7280'
+    };
+  }
+  function buildStyle(COLORS, dark){
+    return '\n'
+    + '.scw-btn{position:fixed;right:16px;bottom:16px;background:'+COLORS.primary+';color:'+COLORS.textInverse+';border-radius:999px;padding:12px 16px;font:14px sans-serif;cursor:pointer;z-index:2147483000;box-shadow:0 8px 20px '+(dark?'rgba(0,0,0,.4)':'rgba(0,0,0,.15)')+'}\n'
     + '.scw-badge{position:absolute;top:-4px;right:-4px;background:#ef4444;color:#fff;border-radius:999px;min-width:18px;height:18px;display:none;align-items:center;justify-content:center;font:11px sans-serif;padding:0 5px}\n'
-    + '.scw-panel{position:fixed;right:16px;bottom:64px;width:380px;height:600px;background:'+COLORS.bgPaper+';border:1px solid '+COLORS.border+';border-radius:12px;box-shadow:0 16px 30px rgba(0,0,0,.2);display:none;flex-direction:column;overflow:hidden;z-index:2147483000}\n'
+    + '.scw-panel{position:fixed;right:16px;bottom:64px;width:380px;height:600px;background:'+COLORS.bgPaper+';border:1px solid '+COLORS.border+';border-radius:12px;box-shadow:0 16px 30px '+(dark?'rgba(0,0,0,.5)':'rgba(0,0,0,.2)')+';display:none;flex-direction:column;overflow:hidden;z-index:2147483000}\n'
     + '.scw-head{padding:10px 12px;background:'+COLORS.primaryDark+';color:'+COLORS.textInverse+';font:600 14px sans-serif;display:flex;justify-content:space-between;align-items:center}\n'
     + '.scw-head .scw-actions{display:flex;gap:10px;align-items:center}\n'
     + '.scw-edit{cursor:pointer;opacity:.9}\n.scw-edit:hover{opacity:1}\n'
     + '.scw-name-edit{display:flex;gap:6px;align-items:center;margin-left:8px;flex-wrap:wrap}\n'
-    + '.scw-name-edit input{flex:1 1 100%;min-width:0;padding:4px 6px;border-radius:6px;border:1px solid '+COLORS.border+';font:12px sans-serif;background:'+COLORS.bgDefault+';color:'+COLORS.textPrimary+'}\n'
-    + '.scw-name-btn{background:#10b981;border:0;color:#fff;padding:4px 8px;border-radius:6px;cursor:pointer;font:12px sans-serif}\n.scw-name-cancel{background:'+COLORS.muted+'}\n'
+    + '.scw-name-edit input{flex:1 1 100%;min-width:0;padding:4px 6px;border-radius:6px;border:1px solid '+COLORS.border+';font:12px sans-serif;background:'+COLORS.bgPaper+';color:'+COLORS.textPrimary+'}\n'
+    + '.scw-name-btn{background:#10b981;border:0;color:#fff;padding:4px 8px;border-radius:6px;cursor:pointer;font:12px sans-serif}\n.scw-name-cancel{background:'+COLORS.muted+';color:'+COLORS.textInverse+'}\n'
     + '.scw-banner{display:none;background:'+COLORS.primaryDark+';color:'+COLORS.textInverse+';font:12px sans-serif;padding:6px 8px;border-bottom:1px solid '+COLORS.border+'}\n'
-    + '.scw-body{flex:1;overflow:auto;padding:8px;background:'+cssVar('--color-background-default', '#f9fafb')+'}\n'
+    + '.scw-body{flex:1;overflow:auto;padding:8px;background:'+(dark?COLORS.bgDefault:cssVar('--color-background-default','#f9fafb'))+'}\n'
     + '.scw-msg{margin:6px 0;max-width:84%;padding:8px 10px;border-radius:10px;font:14px sans-serif;display:flex;gap:8px;align-items:flex-end;flex-direction:column;word-break:break-word;overflow-wrap:anywhere}\n'
     + '.scw-line{white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}\n'
     + '.scw-in{background:'+COLORS.primary+';color:'+COLORS.textInverse+';margin-left:auto;align-items:flex-end}\n'
-    + '.scw-out{background:'+COLORS.border+';color:'+COLORS.textPrimary+';margin-right:auto;align-items:flex-start}\n'
-    + '.scw-time{opacity:.7;font:11px sans-serif}\n'
-    + '.scw-agent{opacity:.85;font:11px sans-serif;margin-bottom:2px}\n'
-    + '.scw-input{display:flex;border-top:1px solid '+COLORS.border+'}\n'
-    + '.scw-input textarea{flex:1;border:0;padding:10px;font:14px sans-serif;outline:none;background:'+COLORS.bgDefault+';color:'+COLORS.textPrimary+';resize:none;min-height:38px;max-height:140px;line-height:1.35;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}\n'
+    + '.scw-out{background:'+(dark?'#21262D':COLORS.border)+';color:'+COLORS.textPrimary+';margin-right:auto;align-items:flex-start}\n'
+    + '.scw-time{opacity:.7;font:11px sans-serif;color:'+COLORS.textPrimary+'}\n'
+    + '.scw-agent{opacity:.85;font:11px sans-serif;margin-bottom:2px;color:'+COLORS.textPrimary+'}\n'
+    + '.scw-input{display:flex;border-top:1px solid '+COLORS.border+';background:'+COLORS.bgPaper+'}\n'
+    + '.scw-input textarea{flex:1;border:0;padding:10px;font:14px sans-serif;outline:none;background:'+COLORS.bgPaper+';color:'+COLORS.textPrimary+';resize:none;min-height:38px;max-height:140px;line-height:1.35;white-space:pre-wrap;word-break:break-word;overflow-wrap:anywhere}\n'
     + '.scw-input button{border:0;background:'+COLORS.primary+';color:'+COLORS.textInverse+';padding:0 12px;font:14px sans-serif;cursor:pointer}\n'
-    + '.scw-retry{cursor:pointer;color:#fde68a;margin-left:8px;text-decoration:underline}\n'
+    + '.scw-retry{cursor:pointer;color:'+(dark?'#FDB022':'#fde68a')+';margin-left:8px;text-decoration:underline}\n'
     + '@media (max-width: 480px){.scw-panel{width:92vw;height:70vh}}\n';
+  }
+
+  var dark = isDarkTheme();
+  var COLORS = getColors(dark);
+  var STYLE = buildStyle(COLORS, dark);
+  var styleElement = null;
 
   function el(tag,cls,text){var e=d.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=String(text);return e}
-  function style(){ if(__scwStyleInjected) return; var s=el('style'); s.textContent=STYLE; d.head.appendChild(s); __scwStyleInjected=true; }
+  function style(){ if(__scwStyleInjected) return; styleElement=el('style'); styleElement.textContent=STYLE; styleElement.id='scw-style'; d.head.appendChild(styleElement); __scwStyleInjected=true; }
+  function updateTheme(){ try{ var newDark=isDarkTheme(); if(newDark===dark) return; dark=newDark; COLORS=getColors(dark); STYLE=buildStyle(COLORS, dark); if(styleElement){ styleElement.textContent=STYLE; } }catch(_){} }
   function getCookie(name){ try{ var m=('; '+document.cookie).split('; '+name+'='); if(m.length===2) return m.pop().split(';').shift(); }catch(_){} return '' }
   function setCookie(name,val,days){ try{ var d=new Date(); d.setTime(d.getTime()+ (days||30)*24*60*60*1000); document.cookie = name+'='+encodeURIComponent(val)+'; expires='+d.toUTCString()+'; path=/'; }catch(_){} }
   function fmtTime(ts){try{var dt=new Date(ts); return dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});}catch(_){return ''}}
@@ -56,7 +89,13 @@ function connect(origin,token,onMsg,onOpen,onClose){var ws=new WebSocket(origin.
   function patchName(origin,id,token,name){return fetch(origin+'/v1/conversations/'+encodeURIComponent(id)+'/name',{method:'PATCH',headers:{'content-type':'application/json','authorization':'Bearer '+token},body:JSON.stringify({name:name})}).then(function(r){if(!r.ok)throw new Error('rename failed');return r.json()})}
 
   function detectOrigin(){ try{ var s=document.currentScript && document.currentScript.src; if(!s){ var scripts=document.getElementsByTagName('script'); if(scripts&&scripts.length) s=scripts[scripts.length-1].src; } if(s){ var u=new URL(s); return u.origin; } }catch(_){} return '' }
-  function init(opts){style();var origin=((opts&&opts.origin)||detectOrigin()).replace(/\/$/,'');var store=w.localStorage||{getItem:function(){},setItem:function(){}};
+  function setupThemeObservers(){
+    // Watch for prefers-color-scheme changes
+    try{ if(w.matchMedia){ var mq=w.matchMedia('(prefers-color-scheme: dark)'); if(mq.addEventListener){ mq.addEventListener('change', updateTheme); }else if(mq.addListener){ mq.addListener(updateTheme); } } }catch(_){}
+    // Watch for data-theme attribute changes on <html>
+    try{ if(w.MutationObserver){ var obs=new MutationObserver(updateTheme); obs.observe(d.documentElement, {attributes:true, attributeFilter:['data-theme','class']}); if(d.body){ obs.observe(d.body, {attributes:true, attributeFilter:['class']}); } } }catch(_){}
+  }
+  function init(opts){style();setupThemeObservers();var origin=((opts&&opts.origin)||detectOrigin()).replace(/\/$/,'');var store=w.localStorage||{getItem:function(){},setItem:function(){}};
     var pageLocale = (function(){ try{
       var fromOpt = opts&&opts.locale; if(fromOpt) return String(fromOpt);
       // Prefer i18next persisted language if present

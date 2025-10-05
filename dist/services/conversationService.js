@@ -89,31 +89,8 @@ async function createConversation(initialName, initialLocale) {
             : {}),
     };
     const conversation = await prisma.conversation.create({ data });
-    // Proactively create the Telegram topic and post welcome (if configured)
-    try {
-        await (0, telegramApi_1.ensureTopicForConversation)(conversation.id);
-        try {
-            logger.info({ event: 'topic_created', conversationId: conversation.id, codename });
-        }
-        catch { }
-        // Also send welcome via centralized system messages if configured
-        try {
-            const { emitServiceMessage } = await Promise.resolve().then(() => __importStar(require('./systemMessages')));
-            await emitServiceMessage(conversation.id, 'welcome_message', {});
-        }
-        catch (e) {
-            try {
-                logger.warn({ event: 'welcome_error', conversationId: conversation.id, err: e });
-            }
-            catch { }
-        }
-    }
-    catch (e) {
-        try {
-            logger.warn({ event: 'topic_create_error', conversationId: conversation.id, err: e });
-        }
-        catch { }
-    }
+    // Note: Topic creation and welcome message are now deferred until first customer message
+    // This avoids creating empty topics for visitors who open the widget but never send a message
     return conversation;
 }
 async function setNickname(conversationId, name) {
@@ -219,6 +196,33 @@ async function addMessage(conversationId, direction, text) {
     });
     const nowField = direction === 'INBOUND' ? { lastCustomerAt: new Date() } : { lastAgentAt: new Date() };
     await prisma.conversation.update({ where: { id: conversationId }, data: nowField });
+    // On first INBOUND message: create topic and send welcome message
+    if (direction === 'INBOUND' && messagesBefore === 0) {
+        try {
+            await (0, telegramApi_1.ensureTopicForConversation)(conversationId);
+            try {
+                logger.info({ event: 'topic_created_on_first_msg', conversationId });
+            }
+            catch { }
+            // Send welcome message via centralized system messages
+            try {
+                const { emitServiceMessage } = await Promise.resolve().then(() => __importStar(require('./systemMessages')));
+                await emitServiceMessage(conversationId, 'welcome_message', {});
+            }
+            catch (e) {
+                try {
+                    logger.warn({ event: 'welcome_error', conversationId, err: e });
+                }
+                catch { }
+            }
+        }
+        catch (e) {
+            try {
+                logger.warn({ event: 'topic_create_error', conversationId, err: e });
+            }
+            catch { }
+        }
+    }
     // While unclaimed: after any inbound, show waiting note (rate-limited via template)
     if (direction === 'INBOUND') {
         try {

@@ -227,6 +227,60 @@ Edit under `/admin` → “System messages” (inline switches + Save). Changes 
 - Admin endpoints require a service token header
 - Input length limits, HTML stripping, rate limiting
 
+## Production deployment (systemd)
+
+The service runs as a systemd unit in production. See `documents/WHITEPAPER.md` for full deployment details.
+
+### Service management
+
+```bash
+# Check service status
+sudo systemctl status support-chat
+
+# Restart the service
+sudo systemctl restart support-chat
+
+# View service logs
+sudo journalctl -u support-chat -f
+
+# Stop/start the service
+sudo systemctl stop support-chat
+sudo systemctl start support-chat
+```
+
+### Daily automatic restart
+
+A systemd timer (`support-chat-restart.timer`) automatically restarts the service daily at 3:00 AM UTC to ensure fresh memory state and clear any potential memory leaks or connection issues.
+
+**Timer configuration files:**
+- `/etc/systemd/system/support-chat-restart.timer` — Timer unit (scheduled at 3 AM daily with 0-5 min randomization)
+- `/etc/systemd/system/support-chat-restart.service` — Service unit that executes the restart
+
+**Timer management:**
+
+```bash
+# Check timer status and next run time
+sudo systemctl status support-chat-restart.timer
+
+# List all timers with next scheduled times
+sudo systemctl list-timers support-chat-restart.timer
+
+# View timer logs
+sudo journalctl -u support-chat-restart.timer -f
+
+# Disable the daily restart (if needed)
+sudo systemctl disable --now support-chat-restart.timer
+
+# Re-enable the daily restart
+sudo systemctl enable --now support-chat-restart.timer
+```
+
+The timer includes:
+- **Scheduled time:** Daily at 03:00 UTC
+- **Randomized delay:** 0-300 seconds to avoid exact-time load spikes
+- **Persistent:** Catches up if the system was off during scheduled time
+- **Auto-enabled:** Starts automatically on system boot
+
 ## Development tips
 
 ```bash

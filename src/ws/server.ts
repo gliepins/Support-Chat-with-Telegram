@@ -104,8 +104,8 @@ export function attachWsServer(httpServer: Server, pathPrefix = '/v1/ws') {
         if (typeof text !== 'string' || text.length === 0) { return; }
         if (text.length > 4000) { try { ws.send(JSON.stringify({ error: 'message_too_long' })); } catch {}; return; }
         await addMessage(conversationId, 'INBOUND', text);
+        // Note: addMessage now handles topic creation and welcome message for first message
         try {
-          await ensureTopicForConversation(conversationId);
           await sendCustomerMessage(conversationId, text);
         } catch {}
         // Echo to all clients in this conversation (customer can have multiple tabs)
